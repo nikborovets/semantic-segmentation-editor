@@ -576,6 +576,8 @@ export default class SseEditor3d extends React.Component {
         // set pan button to null, default is RMB, but that's used for labeling
         this.orbiter.mouseButtons = {ORBIT: THREE.MOUSE.LEFT, ZOOM: THREE.MOUSE.MIDDLE, PAN: null};
 
+        this.orbiter.zoomSpeed = 0.5;
+        this.orbiter.rotateSpeed = 0.3;
         this.orbiter.addEventListener("start", this.orbiterStart.bind(this), false);
         this.orbiter.addEventListener("change", this.orbiterChange.bind(this), false);
         this.orbiter.addEventListener("end", this.orbiterEnd.bind(this), false);

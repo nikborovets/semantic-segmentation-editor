@@ -1,4 +1,7 @@
+.DS_Store
 node_modules
 .meteor/.id
 .meteor/versions
 .vscode/*
+pcd_samples/*
+room_labels_new.json

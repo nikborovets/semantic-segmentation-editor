@@ -1,22 +1,23 @@
-version: '3'
-
 services:
   app:
-    image: dmandrioli/semantic-segmentation-editor
+    # image: dmandrioli/semantic-segmentation-editor
+    build:
+      context: .
+      dockerfile: Dockerfile
     volumes:
-      - "${SSE_IMAGES}:/root/sse-images:rw"
+      - "${SSE_IMAGES:-./pcd_samples}:/root/sse-images:rw"
     ports:
-      - '80:3000'
+      - '8080:3000'
     depends_on:
       - mongo
     environment:
-      ROOT_URL: ${APP_ROOT_URL:-http://localhost}
+      ROOT_URL: ${APP_ROOT_URL:-http://localhost:8080}
       MONGO_URL: mongodb://mongo:27017/meteor
       PORT: 3000
       METEOR_SETTINGS: ${METEOR_SETTINGS}
 
   mongo:
-    image: mongo:latest
+    image: mongo:7.0
     command:
       - --storageEngine=wiredTiger
     volumes:
