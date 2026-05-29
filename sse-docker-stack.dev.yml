@@ -4,8 +4,11 @@
 #   docker compose -f sse-docker-stack.dev.yml build
 #   SETTINGS_FILE=room_labels_new.json docker compose -f sse-docker-stack.dev.yml up
 #
-# After editing JS/JSX/Less:
+# After editing JS/JSX/Less (rebuilds only when sources changed; npm skipped if bundle deps unchanged):
 #   docker compose -f sse-docker-stack.dev.yml restart app
+#
+# Force full meteor build + server npm install:
+#   SSE_FORCE_REBUILD=1 docker compose -f sse-docker-stack.dev.yml restart app
 #
 # Optional hot reload on save: SSE_HOT_RELOAD=1 docker compose -f sse-docker-stack.dev.yml up
 
@@ -26,7 +29,9 @@ services:
       - ./scripts/docker-dev-entrypoint.sh:/usr/local/bin/docker-dev-entrypoint.sh:ro
       - borovets_sse_dev_node_modules:/opt/src/node_modules
       - borovets_sse_dev_meteor_local:/opt/src/.meteor/local
-      - "${SSE_IMAGES:-./pcd_samples}:/root/sse-images:rw"
+      - borovets_sse_dev_bundle:/var/cache/borovets-sse-meteor-build
+      - borovets_sse_dev_npm_cache:/root/.npm
+      - "${SSE_IMAGES:-/mnt/data/n.borovets/pcd_for_sem_seg_editor}:/root/sse-images:rw"
       - "${SSE_INTERNAL:-./sse-internal-local}:/root/sse-internal:rw"
     ports:
       - "8500:3000"
@@ -40,6 +45,7 @@ services:
       METEOR_SETTINGS: ${METEOR_SETTINGS:-}
       # 0 = rebuild on container start/restart only (default). 1 = meteor run with hot reload.
       SSE_HOT_RELOAD: ${SSE_HOT_RELOAD:-0}
+      SSE_FORCE_REBUILD: ${SSE_FORCE_REBUILD:-0}
       METEOR_ALLOW_SUPERUSER: "1"
       http_proxy: socks5h://172.17.0.1:32448
       https_proxy: socks5h://172.17.0.1:32448
@@ -61,5 +67,9 @@ volumes:
     name: borovets_sse_dev_node_modules
   borovets_sse_dev_meteor_local:
     name: borovets_sse_dev_meteor_local
+  borovets_sse_dev_bundle:
+    name: borovets_sse_dev_bundle
+  borovets_sse_dev_npm_cache:
+    name: borovets_sse_dev_npm_cache
   borovets_sse_data_dev:
     name: borovets_sse_data_dev
