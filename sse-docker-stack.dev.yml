@@ -1,0 +1,53 @@
+# Development stack: live Meteor server with the repo bind-mounted (no image rebuild per JS change).
+#
+# First time:
+#   docker compose -f sse-docker-stack.dev.yml build
+#   SETTINGS_FILE=room_labels_new.json docker compose -f sse-docker-stack.dev.yml up
+#
+# Later: edit JS/JSX/Less — save; Meteor reloads in the running container.
+# Restart container only after package.json, npm, or .meteor/* changes.
+
+name: borovets-sse-dev
+
+services:
+  app:
+    image: borovets/semantic-segmentation-editor:dev
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: borovets-sse-app-dev
+    platform: linux/amd64
+    volumes:
+      - .:/opt/src
+      - borovets_sse_dev_node_modules:/opt/src/node_modules
+      - borovets_sse_dev_meteor_local:/opt/src/.meteor/local
+      - "${SSE_IMAGES:-./pcd_samples}:/root/sse-images:rw"
+      - "${SSE_INTERNAL:-./sse-internal-local}:/root/sse-internal:rw"
+    ports:
+      - "8500:3000"
+    depends_on:
+      - mongo
+    environment:
+      ROOT_URL: ${APP_ROOT_URL:-http://localhost:8500}
+      MONGO_URL: mongodb://mongo:27017/meteor
+      PORT: 3000
+      SETTINGS_FILE: ${SETTINGS_FILE:-settings.json}
+      METEOR_SETTINGS: ${METEOR_SETTINGS:-}
+    stdin_open: true
+    tty: true
+
+  mongo:
+    image: mongo:7.0
+    container_name: borovets-sse-mongo-dev
+    command:
+      - --storageEngine=wiredTiger
+    volumes:
+      - borovets_sse_data_dev:/data/db
+
+volumes:
+  borovets_sse_dev_node_modules:
+    name: borovets_sse_dev_node_modules
+  borovets_sse_dev_meteor_local:
+    name: borovets_sse_dev_meteor_local
+  borovets_sse_data_dev:
+    name: borovets_sse_data_dev
