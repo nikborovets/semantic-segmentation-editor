@@ -19,8 +19,11 @@ services:
       dockerfile: Dockerfile.dev
     container_name: borovets-sse-app-dev
     platform: linux/amd64
+    # Host-mounted script may lack +x; bash avoids "permission denied" on exec.
+    entrypoint: ["bash", "/usr/local/bin/docker-dev-entrypoint.sh"]
     volumes:
       - .:/opt/src
+      - ./scripts/docker-dev-entrypoint.sh:/usr/local/bin/docker-dev-entrypoint.sh:ro
       - borovets_sse_dev_node_modules:/opt/src/node_modules
       - borovets_sse_dev_meteor_local:/opt/src/.meteor/local
       - "${SSE_IMAGES:-./pcd_samples}:/root/sse-images:rw"
@@ -38,6 +41,10 @@ services:
       # 0 = rebuild on container start/restart only (default). 1 = meteor run with hot reload.
       SSE_HOT_RELOAD: ${SSE_HOT_RELOAD:-0}
       METEOR_ALLOW_SUPERUSER: "1"
+      http_proxy: socks5h://172.17.0.1:32448
+      https_proxy: socks5h://172.17.0.1:32448
+      HTTP_PROXY: socks5h://172.17.0.1:32448
+      HTTPS_PROXY: socks5h://172.17.0.1:32448
     stdin_open: true
     tty: true
 

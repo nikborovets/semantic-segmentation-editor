@@ -11,7 +11,7 @@ cd "$APP_DIR"
 HOT_RELOAD="${SSE_HOT_RELOAD:-0}"
 
 echo "================================================================"
-echo "[dev] entrypoint v4 | SSE_HOT_RELOAD=${HOT_RELOAD}"
+echo "[dev] entrypoint v5 | SSE_HOT_RELOAD=${HOT_RELOAD}"
 if [[ "$HOT_RELOAD" == "1" ]]; then
   echo "[dev] Mode: HOT RELOAD (meteor run) — you will see 'Started proxy.' then a LONG quiet compile."
 else
@@ -78,7 +78,7 @@ run_build_and_node() {
 
   echo "[dev] $(date -Iseconds) meteor build finished."
   echo "[dev] Installing server bundle dependencies..."
-  (cd "$build_dir/bundle/programs/server" && npm install --production)
+  (cd "$build_dir/bundle/programs/server" && meteor npm install --production)
 
   echo "[dev] $(date -Iseconds) Starting node main.js"
   echo "[dev] After code changes: docker compose -f sse-docker-stack.dev.yml restart app"
