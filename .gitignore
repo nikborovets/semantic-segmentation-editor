@@ -6,3 +6,4 @@ node_modules
 pcd_samples/*
 room_labels_new.json
 sse-internal-local/*
+*.log
