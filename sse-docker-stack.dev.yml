@@ -1,11 +1,13 @@
-# Development stack: live Meteor server with the repo bind-mounted (no image rebuild per JS change).
+# Development stack: repo bind-mounted; code is applied on container start/restart (not on every save).
 #
 # First time:
 #   docker compose -f sse-docker-stack.dev.yml build
 #   SETTINGS_FILE=room_labels_new.json docker compose -f sse-docker-stack.dev.yml up
 #
-# Later: edit JS/JSX/Less — save; Meteor reloads in the running container.
-# Restart container only after package.json, npm, or .meteor/* changes.
+# After editing JS/JSX/Less:
+#   docker compose -f sse-docker-stack.dev.yml restart app
+#
+# Optional hot reload on save: SSE_HOT_RELOAD=1 docker compose -f sse-docker-stack.dev.yml up
 
 name: borovets-sse-dev
 
@@ -33,6 +35,9 @@ services:
       PORT: 3000
       SETTINGS_FILE: ${SETTINGS_FILE:-settings.json}
       METEOR_SETTINGS: ${METEOR_SETTINGS:-}
+      # 0 = rebuild on container start/restart only (default). 1 = meteor run with hot reload.
+      SSE_HOT_RELOAD: ${SSE_HOT_RELOAD:-0}
+      METEOR_ALLOW_SUPERUSER: "1"
     stdin_open: true
     tty: true
 
