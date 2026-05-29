@@ -5,3 +5,4 @@ node_modules
 .vscode/*
 pcd_samples/*
 room_labels_new.json
+sse-internal-local/*

@@ -6,6 +6,7 @@ services:
       dockerfile: Dockerfile
     volumes:
       - "${SSE_IMAGES:-./pcd_samples}:/root/sse-images:rw"
+      - "${SSE_INTERNAL:-./sse-internal-local}:/root/sse-internal:rw"
     ports:
       - '8080:3000'
     depends_on:
