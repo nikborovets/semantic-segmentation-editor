@@ -33,6 +33,19 @@ export default class SseClassChooser extends SseToolbar {
         }
     }
 
+    resolveClassesSet(name) {
+        const soc = name ? this.classesSetByName.get(name) : undefined;
+        if (soc) {
+            return soc;
+        }
+        if (name) {
+            console.warn(
+                `[SSE] Set of classes "${name}" is not in settings; using "${this.classesSets[0].name}".`
+            );
+        }
+        return this.classesSets[0];
+    }
+
     messages() {
         this.onMsg("classSelection", (arg) => {
             this.setState({activeClassIndex: arg.descriptor.classIndex});
@@ -53,10 +66,8 @@ export default class SseClassChooser extends SseToolbar {
         });
 
         this.onMsg("editor-ready", (arg) => {
-            if (arg && arg.value && arg.value.socName)
-                this.sendMsg("active-soc", {value: this.classesSetByName.get(arg.value.socName)});
-            else
-                this.sendMsg("active-soc", {value: this.classesSets[0]});
+            const socName = arg && arg.value && arg.value.socName;
+            this.sendMsg("active-soc", {value: this.resolveClassesSet(socName)});
         });
 
         this.onMsg("active-soc", (arg) => {
@@ -66,8 +77,7 @@ export default class SseClassChooser extends SseToolbar {
         });
 
         this.onMsg("active-soc-name", (arg) => {
-            const value = this.classesSetByName.get(arg.value);
-            this.sendMsg("active-soc", {value});
+            this.sendMsg("active-soc", {value: this.resolveClassesSet(arg.value)});
         });
 
     }
@@ -98,7 +108,15 @@ export default class SseClassChooser extends SseToolbar {
     }
 
     changeClassesSet(name) {
-        const newSoc = this.classesSetByName.get(name);
+        let newSoc = name ? this.classesSetByName.get(name) : undefined;
+        if (!newSoc) {
+            if (name) {
+                console.warn(
+                    `[SSE] Set of classes "${name}" is not in settings; using "${this.classesSets[0].name}".`
+                );
+            }
+            newSoc = this.classesSets[0];
+        }
         const usedClasses = Object.keys(this.state.counters).filter(x => this.state.counters[x] > 0);
         const missing = [];
         usedClasses.forEach(x => {

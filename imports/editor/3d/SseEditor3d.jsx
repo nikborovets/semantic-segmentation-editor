@@ -406,6 +406,9 @@ export default class SseEditor3d extends React.Component {
         });
 
         this.onMsg("active-soc", arg => {
+            if (!arg.value) {
+                return;
+            }
             if (this.activeSoc !== arg.value) {
                 this.activeSoc = arg.value;
                 if (!this.meta) {
