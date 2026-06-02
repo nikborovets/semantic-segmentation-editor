@@ -2271,32 +2271,36 @@ export default class SseEditor3d extends React.Component {
         this.meta.socName = newSoc.name;
         this.meta.labelSchema = _labelSchemaFromLiveSet(newSoc._config);
         this._classesData = null;
-
-        const bgIdx = this.backgroundIndex;
-        if (this.cloudData) {
-            this.cloudData.byClassIndex = {};
-            this.cloudData.forEach(pt => { pt.classIndex = bgIdx; });
-            this.cloudData.byClassIndex[bgIdx] = new Set(this.cloudData);
-        }
-
         this.objects.clear();
         this.selectedObject = undefined;
+        this.activeClassIndex = this.backgroundIndex;
         this.sendMsg("objects-update", {value: this.objects});
         this.sendMsg("object-select", {value: undefined});
-        this.activeClassIndex = bgIdx;
 
-        // If PCD has embedded RGB data, switch to RGB display so the cloud is
-        // visible rather than showing the (typically black) background color.
-        if (this.rgbArray && this.rgbArray.length > 0) {
-            this.displayRgb = true;
-            this.sendMsg("show-rgb-toggle");
-        }
-
-        this.generateColorCache();
-        this.invalidateColor();
-        this.displayAll();
-        this._broadcastSchemaDescriptors();
-        this.invalidateCounters();
-        this.saveAll();
+        // Full PCD reload without applying old binary labels — fresh start.
+        $("#waiting").removeClass("display-none");
+        const fileUrl = SseGlobals.getFileUrl(this.props.imageUrl);
+        this.loadPCDFile(fileUrl).then(() => {
+            this.rotateGeometry(this.meta.rotationX, this.meta.rotationY, this.meta.rotationZ);
+            // Rebuild cloudData with all points at backgroundIndex
+            const bgIdx = this.backgroundIndex;
+            this.cloudData.forEach(pt => { pt.classIndex = bgIdx; });
+            this.cloudData.byClassIndex = {};
+            this.cloudData.byClassIndex[bgIdx] = new Set(this.cloudData);
+            // Persist the cleared labels so next open sees the reset state
+            this.saveBinaryObjects();
+            this.saveBinaryLabels();
+            this.saveMeta();
+            this.generateColorCache();
+            this.display(Array.from(this.objects), this.positionArray, this.cloudData.map(p => p.classIndex), this.rgbArray)
+                .then(() => {
+                    this._broadcastSchemaDescriptors();
+                    this.invalidateCounters();
+                    $("#waiting").addClass("display-none");
+                    if (this.rgbArray && this.rgbArray.length > 0) {
+                        this.sendMsg("show-rgb-toggle");
+                    }
+                });
+        });
     }
 }
