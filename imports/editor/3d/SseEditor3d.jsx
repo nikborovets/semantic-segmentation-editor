@@ -2267,53 +2267,30 @@ export default class SseEditor3d extends React.Component {
     }
 
     _resetToNewSet(newSoc) {
-        const oldSchema = this.meta && this.meta.labelSchema;
-
         this.activeSoc = newSoc;
         this.meta.socName = newSoc.name;
-        const newSchema = _labelSchemaFromLiveSet(newSoc._config);
-        this.meta.labelSchema = newSchema;
+        this.meta.labelSchema = _labelSchemaFromLiveSet(newSoc._config);
         this._classesData = null;
 
         const bgIdx = this.backgroundIndex;
-        const orphanEntry = newSchema.objects.find(o => o.label === 'orphan' && o.status === 'active');
-        const orphanIdx = orphanEntry ? orphanEntry.index : bgIdx;
-
         if (this.cloudData) {
             this.cloudData.byClassIndex = {};
-            if (oldSchema) {
-                // Remap by label name: preserves assignments shared between sets
-                const newByLabel = new Map(newSchema.objects.map(o => [o.label, o.index]));
-                this.cloudData.forEach(pt => {
-                    const oldObj = oldSchema.objects[pt.classIndex];
-                    const newIdx = oldObj ? newByLabel.get(oldObj.label) : undefined;
-                    pt.classIndex = newIdx !== undefined ? newIdx : orphanIdx;
-                    if (!this.cloudData.byClassIndex[pt.classIndex])
-                        this.cloudData.byClassIndex[pt.classIndex] = new Set();
-                    this.cloudData.byClassIndex[pt.classIndex].add(pt);
-                });
-            } else {
-                this.cloudData.forEach(pt => { pt.classIndex = bgIdx; });
-                this.cloudData.byClassIndex[bgIdx] = new Set(this.cloudData);
-            }
+            this.cloudData.forEach(pt => { pt.classIndex = bgIdx; });
+            this.cloudData.byClassIndex[bgIdx] = new Set(this.cloudData);
         }
 
-        // Remap objects' classIndex by name as well
-        const newByLabel = new Map(newSchema.objects.map(o => [o.label, o.index]));
-        this.objects.forEach(obj => {
-            if (oldSchema) {
-                const oldObj = oldSchema.objects[obj.classIndex];
-                const newIdx = oldObj ? newByLabel.get(oldObj.label) : undefined;
-                obj.classIndex = newIdx !== undefined ? newIdx : orphanIdx;
-            } else {
-                obj.classIndex = bgIdx;
-            }
-        });
-
+        this.objects.clear();
         this.selectedObject = undefined;
         this.sendMsg("objects-update", {value: this.objects});
         this.sendMsg("object-select", {value: undefined});
         this.activeClassIndex = bgIdx;
+
+        // If PCD has embedded RGB data, switch to RGB display so the cloud is
+        // visible rather than showing the (typically black) background color.
+        if (this.rgbArray && this.rgbArray.length > 0) {
+            this.displayRgb = true;
+            this.sendMsg("show-rgb-toggle");
+        }
 
         this.generateColorCache();
         this.invalidateColor();
