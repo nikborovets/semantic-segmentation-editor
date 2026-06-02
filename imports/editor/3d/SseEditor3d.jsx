@@ -989,7 +989,7 @@ export default class SseEditor3d extends React.Component {
                 let message;
                 if (schema && schema.objects[data.classIndex]) {
                     message = schema.objects[data.classIndex].label;
-                } else if (this.activeSoc) {
+                } else if (this.activeSoc && data.classIndex < this.activeSoc.classesCount) {
                     message = this.activeSoc.labelForIndex(data.classIndex);
                 } else {
                     message = String(data.classIndex);
@@ -1033,7 +1033,7 @@ export default class SseEditor3d extends React.Component {
 
     paintScene() {
         if (this.cloudData) {
-            if (this.displayRgb && this.rgbArray.length > 0) {
+            if (this.displayRgb && this.rgbArray && this.rgbArray.length > 0) {
                 this.cloudData.forEach((pt, idx) => {
                     var rgb = this.rgbArray[idx];
                     this.setColor(idx, {red: rgb[0] / 255, green: rgb[1] / 255, blue: rgb[2] / 255});
@@ -2067,33 +2067,35 @@ export default class SseEditor3d extends React.Component {
                         break;
                 }
             });
-            const colorArray = [];
-            if(this.displayRgb){
-                if (rgbArray) {
-                    rgbArray.forEach((v, i) => {
-                        //this.cloudData[i].classIndex = v;
-                        const rgb = v;
-                        colorArray.push(rgb[0]/255, rgb[1]/255, rgb[2]/255);
-                    });
-                }
+            // Always assign classIndex from labelArray so updateClassFilter/counters work
+            // regardless of whether RGB display is active.
+            if (labelArray) {
+                labelArray.forEach((v, i) => {
+                    if (this.cloudData[i]) this.cloudData[i].classIndex = v;
+                });
+            } else {
+                this.cloudData.forEach(pt => { pt.classIndex = 0; });
             }
-            else{
-                if (labelArray) {
-                    const schema = this.meta && this.meta.labelSchema;
-                    labelArray.forEach((v, i) => {
-                        this.cloudData[i].classIndex = v;
-                        let rgb;
-                        if (schema && schema.objects[v]) {
-                            rgb = SseGlobals.hex2rgb(schema.objects[v].color || '#888888');
-                        } else if (this.activeSoc) {
-                            try { rgb = this.activeSoc.colorForIndexAsRGBArray(v); }
-                            catch (e) { rgb = [0.5, 0.5, 0.5]; }
-                        } else {
-                            rgb = [0.5, 0.5, 0.5];
-                        }
-                        colorArray.push(rgb[0], rgb[1], rgb[2]);
-                    });
-                }
+
+            const colorArray = [];
+            if (this.displayRgb && rgbArray) {
+                rgbArray.forEach((v) => {
+                    colorArray.push(v[0]/255, v[1]/255, v[2]/255);
+                });
+            } else if (labelArray) {
+                const schema = this.meta && this.meta.labelSchema;
+                labelArray.forEach((v) => {
+                    let rgb;
+                    if (schema && schema.objects[v]) {
+                        rgb = SseGlobals.hex2rgb(schema.objects[v].color || '#888888');
+                    } else if (this.activeSoc) {
+                        try { rgb = this.activeSoc.colorForIndexAsRGBArray(v); }
+                        catch (e) { rgb = [0.5, 0.5, 0.5]; }
+                    } else {
+                        rgb = [0.5, 0.5, 0.5];
+                    }
+                    colorArray.push(rgb[0], rgb[1], rgb[2]);
+                });
             }
 
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(positionArray, 3));
