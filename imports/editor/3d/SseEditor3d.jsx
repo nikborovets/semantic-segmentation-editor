@@ -2271,36 +2271,34 @@ export default class SseEditor3d extends React.Component {
         this.meta.socName = newSoc.name;
         this.meta.labelSchema = _labelSchemaFromLiveSet(newSoc._config);
         this._classesData = null;
-        this.objects.clear();
         this.selectedObject = undefined;
         this.activeClassIndex = this.backgroundIndex;
-        this.sendMsg("objects-update", {value: this.objects});
         this.sendMsg("object-select", {value: undefined});
 
-        // Full PCD reload without applying old binary labels — fresh start.
+        // Reload PCD from disk using its embedded label field — this is the
+        // original pre-annotated state independent of any set. SSE-saved
+        // binary .labels file (from the old set) is intentionally not loaded.
         $("#waiting").removeClass("display-none");
         const fileUrl = SseGlobals.getFileUrl(this.props.imageUrl);
         this.loadPCDFile(fileUrl).then(() => {
+            // loadPCDFile already called display() with PCD embedded labels and
+            // the new schema colors. cloudData[i].classIndex = PCD label[i].
+            this.objects.clear(); // discard any objects from old set
             this.rotateGeometry(this.meta.rotationX, this.meta.rotationY, this.meta.rotationZ);
-            // Rebuild cloudData with all points at backgroundIndex
-            const bgIdx = this.backgroundIndex;
-            this.cloudData.forEach(pt => { pt.classIndex = bgIdx; });
-            this.cloudData.byClassIndex = {};
-            this.cloudData.byClassIndex[bgIdx] = new Set(this.cloudData);
-            // Persist the cleared labels so next open sees the reset state
-            this.saveBinaryObjects();
-            this.saveBinaryLabels();
-            this.saveMeta();
             this.generateColorCache();
-            this.display(Array.from(this.objects), this.positionArray, this.cloudData.map(p => p.classIndex), this.rgbArray)
-                .then(() => {
-                    this._broadcastSchemaDescriptors();
-                    this.invalidateCounters();
-                    $("#waiting").addClass("display-none");
-                    if (this.rgbArray && this.rgbArray.length > 0) {
-                        this.sendMsg("show-rgb-toggle");
-                    }
-                });
+            this.invalidateColor();
+            this.displayAll();
+            // Persist PCD-native labels as the new binary labels for this set
+            this.saveBinaryLabels();
+            this.saveBinaryObjects();
+            this.saveMeta();
+            this.sendMsg("objects-update", {value: this.objects});
+            this._broadcastSchemaDescriptors();
+            this.invalidateCounters();
+            $("#waiting").addClass("display-none");
+            if (this.rgbArray && this.rgbArray.length > 0) {
+                this.sendMsg("show-rgb-toggle");
+            }
         });
     }
 }
