@@ -19,16 +19,26 @@ const {imagesFolder, pointcloudsFolder} = configurationFile;
     WebApp.connectHandlers.use(bodyParser.raw({limit: "200mb", type: 'application/octet-stream'}));
     WebApp.connectHandlers.use('/save', function (req, res) {
         if (demoMode) return;
-        const fileToSave = pointcloudsFolder + decodeURIComponent(req.url).replace("/save", "");
+        // req.url is the full path e.g. /save/foo.pcd.labels; strip /save prefix
+        const relPath = decodeURIComponent(req.url).replace(/^\/save/, "");
+        // join normalises double-slashes that arise when pointcloudsFolder ends with /
+        const fileToSave = join(pointcloudsFolder, relPath);
         const dir = fileToSave.match("(.*\/).*")[1];
         shell.mkdir('-p', dir);
 
-        var wstream = createWriteStream(fileToSave);
-        wstream.write(req.body);
-        wstream.end();
         res.setHeader('Content-Type', 'application/octet-stream');
         res.setHeader("Access-Control-Allow-Origin", "*");
         res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
-        res.end("Sent: " + fileToSave);
+
+        const wstream = createWriteStream(fileToSave);
+        wstream.on('error', (err) => {
+            console.error('[SSE] Cannot write', fileToSave, err.code, err.message);
+            if (!res.headersSent) {
+                res.statusCode = 500;
+                res.end('Write error: ' + err.message);
+            }
+        });
+        wstream.write(req.body);
+        wstream.end(() => res.end("Sent: " + fileToSave));
     });
 });
