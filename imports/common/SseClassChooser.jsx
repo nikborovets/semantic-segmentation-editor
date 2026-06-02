@@ -221,7 +221,7 @@ export default class SseClassChooser extends SseToolbar {
                                         "padding": "0 3px"
                                     }}>
                                 <div className="hflex flex-align-items-center w100">
-                                    {this.getIcon(objDesc)}{objDesc.label}
+                                    {this.getIcon(objDesc)}<span className="class-label" title={objDesc.label} data-tippy-delay="100">{objDesc.label}</span>
                                 </div>
                                 <sup>{this.state.counters[objDesc.classIndex] > 0 ? this.state.counters[objDesc.classIndex] : ""}</sup>
                             </Button>
