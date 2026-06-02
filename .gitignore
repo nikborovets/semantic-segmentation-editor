@@ -3,6 +3,7 @@ node_modules
 .meteor/.id
 .meteor/versions
 .vscode/*
+.cursor/*
 pcd_samples/*
 room_labels_new.json
 sse-internal-local/*
