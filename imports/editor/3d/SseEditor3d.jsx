@@ -2289,17 +2289,16 @@ export default class SseEditor3d extends React.Component {
         this.sendMsg("objects-update", {value: this.objects});
         this.sendMsg("object-select", {value: undefined});
 
-        // Persist cleared state to disk and MongoDB
-        this.saveBinaryLabels();
-        this.saveBinaryObjects();
-        this.saveMeta();
-
-        // Re-render with new schema colors
+        // Re-render with new schema colors, then persist
         this.generateColorCache();
         this.display([], this.positionArray, this.cloudData.map(p => p.classIndex), this.rgbArray)
             .then(() => {
                 this._broadcastSchemaDescriptors();
                 this.invalidateCounters();
+                // Save after display so disk writes only happen when render succeeded
+                this.saveBinaryLabels();
+                this.saveBinaryObjects();
+                this.saveMeta();
                 if (this.rgbArray && this.rgbArray.length > 0) {
                     this.sendMsg("show-rgb-toggle");
                 }
