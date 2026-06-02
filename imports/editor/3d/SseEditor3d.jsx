@@ -2267,38 +2267,42 @@ export default class SseEditor3d extends React.Component {
     }
 
     _resetToNewSet(newSoc) {
+        // Switch schema first so every subsequent call uses new schema
         this.activeSoc = newSoc;
         this.meta.socName = newSoc.name;
         this.meta.labelSchema = _labelSchemaFromLiveSet(newSoc._config);
-        this._classesData = null;
+        this._classesData = null; // force rebuild from new schema on next access
+
+        const bgIdx = this.backgroundIndex; // uses new schema
+
+        // Reset all point labels to background — no connection to old set
+        if (this.cloudData) {
+            this.cloudData.byClassIndex = {};
+            this.cloudData.forEach(pt => { pt.classIndex = bgIdx; });
+            this.cloudData.byClassIndex[bgIdx] = new Set(this.cloudData);
+        }
+
+        // Discard all objects from old set
+        this.objects.clear();
         this.selectedObject = undefined;
-        this.activeClassIndex = this.backgroundIndex;
+        this.activeClassIndex = bgIdx;
+        this.sendMsg("objects-update", {value: this.objects});
         this.sendMsg("object-select", {value: undefined});
 
-        // Reload PCD from disk using its embedded label field — this is the
-        // original pre-annotated state independent of any set. SSE-saved
-        // binary .labels file (from the old set) is intentionally not loaded.
-        $("#waiting").removeClass("display-none");
-        const fileUrl = SseGlobals.getFileUrl(this.props.imageUrl);
-        this.loadPCDFile(fileUrl).then(() => {
-            // loadPCDFile already called display() with PCD embedded labels and
-            // the new schema colors. cloudData[i].classIndex = PCD label[i].
-            this.objects.clear(); // discard any objects from old set
-            this.rotateGeometry(this.meta.rotationX, this.meta.rotationY, this.meta.rotationZ);
-            this.generateColorCache();
-            this.invalidateColor();
-            this.displayAll();
-            // Persist PCD-native labels as the new binary labels for this set
-            this.saveBinaryLabels();
-            this.saveBinaryObjects();
-            this.saveMeta();
-            this.sendMsg("objects-update", {value: this.objects});
-            this._broadcastSchemaDescriptors();
-            this.invalidateCounters();
-            $("#waiting").addClass("display-none");
-            if (this.rgbArray && this.rgbArray.length > 0) {
-                this.sendMsg("show-rgb-toggle");
-            }
-        });
+        // Persist cleared state to disk and MongoDB
+        this.saveBinaryLabels();
+        this.saveBinaryObjects();
+        this.saveMeta();
+
+        // Re-render with new schema colors
+        this.generateColorCache();
+        this.display([], this.positionArray, this.cloudData.map(p => p.classIndex), this.rgbArray)
+            .then(() => {
+                this._broadcastSchemaDescriptors();
+                this.invalidateCounters();
+                if (this.rgbArray && this.rgbArray.length > 0) {
+                    this.sendMsg("show-rgb-toggle");
+                }
+            });
     }
 }
