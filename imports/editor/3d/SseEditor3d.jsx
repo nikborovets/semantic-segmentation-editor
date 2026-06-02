@@ -26,6 +26,82 @@ const modulo = (x) => (x % DOUBLEPI + DOUBLEPI) % DOUBLEPI;
 const moduloHalfPI = (x) => modulo(x + PI) - PI;
 const round2 = (x) => Math.round(x * 100) / 100;
 
+// --- Label schema utilities ---
+
+function _simpleHash(str) {
+    let h = 5381;
+    for (let i = 0; i < str.length; i++) h = (Math.imul(h, 31) + str.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(16);
+}
+
+function _computeSettingsHash(objects) {
+    return _simpleHash(JSON.stringify(objects.map(o => ({label: o.label, color: o.color || '', icon: o.icon || ''}))));
+}
+
+function _labelSchemaFromLiveSet(liveSocConfig) {
+    const now = new Date().toISOString();
+    return {
+        revision: now,
+        settingsHash: _computeSettingsHash(liveSocConfig.objects),
+        lastAcknowledgedRevision: now,
+        objects: liveSocConfig.objects.map((o, i) => ({
+            index: i,
+            label: o.label,
+            color: o.color || '#888888',
+            icon: o.icon || '',
+            status: 'active'
+        }))
+    };
+}
+
+function _syncLabelSchema(liveObjects, schema, labelArray) {
+    const liveByLabel = new Map(liveObjects.map(o => [o.label, o]));
+    const schemaObjects = schema.objects.map(o => Object.assign({}, o));
+    const orphanEntry = schemaObjects.find(o => o.label === 'orphan' && o.status === 'active');
+    const orphanIndex = orphanEntry ? orphanEntry.index : -1;
+    const remappedLabels = labelArray ? new Uint8Array(labelArray) : null;
+
+    for (const so of schemaObjects) {
+        if (so.status === 'active' && !liveByLabel.has(so.label)) {
+            so.status = 'orphaned';
+            if (remappedLabels && orphanIndex >= 0) {
+                for (let i = 0; i < remappedLabels.length; i++) {
+                    if (remappedLabels[i] === so.index) remappedLabels[i] = orphanIndex;
+                }
+            }
+        }
+    }
+    for (const so of schemaObjects) {
+        if (so.status === 'active') {
+            const liveObj = liveByLabel.get(so.label);
+            if (liveObj) {
+                so.color = liveObj.color || so.color;
+                so.icon = liveObj.icon || '';
+            }
+        }
+    }
+    let nextIndex = Math.max(0, ...schemaObjects.map(o => o.index)) + 1;
+    for (const liveObj of liveObjects) {
+        if (!schemaObjects.some(o => o.label === liveObj.label)) {
+            schemaObjects.push({
+                index: nextIndex++,
+                label: liveObj.label,
+                color: liveObj.color || '#888888',
+                icon: liveObj.icon || '',
+                status: 'active'
+            });
+        }
+    }
+    const now = new Date().toISOString();
+    return {
+        revision: now,
+        settingsHash: _computeSettingsHash(liveObjects),
+        lastAcknowledgedRevision: now,
+        objects: schemaObjects,
+        remappedLabels
+    };
+}
+
 export default class SseEditor3d extends React.Component {
     constructor() {
         super();
@@ -130,20 +206,35 @@ export default class SseEditor3d extends React.Component {
 
     get classesDescriptors() {
         if (!this._classesData) {
-            const byIndex = this.activeSoc.descriptors;
-            this._classesData = {byName: this.activeSoc.byLabel, byIndex};
-
-            this.activeSoc.labels.forEach((k) => {
-                let c = this.activeSoc.byLabel.get(k);
-                c.mute = false;
-                c.solo = false;
-                c.visible = true;
-
-                const rgb = SseGlobals.hex2rgb(c.color);
-                c.red = rgb[0];
-                c.green = rgb[1];
-                c.blue = rgb[2];
-            });
+            const schema = this.meta && this.meta.labelSchema;
+            if (schema) {
+                const byIndex = schema.objects.map(o => Object.assign({}, o, {
+                    classIndex: o.index,
+                    mute: false,
+                    solo: false,
+                    visible: true
+                }));
+                byIndex.forEach(desc => {
+                    const rgb = SseGlobals.hex2rgb(desc.color || '#888888');
+                    desc.red = rgb[0];
+                    desc.green = rgb[1];
+                    desc.blue = rgb[2];
+                });
+                this._classesData = {byName: new Map(byIndex.map(d => [d.label, d])), byIndex};
+            } else if (this.activeSoc) {
+                const byIndex = this.activeSoc.descriptors;
+                this._classesData = {byName: this.activeSoc.byLabel, byIndex};
+                this.activeSoc.labels.forEach((k) => {
+                    let c = this.activeSoc.byLabel.get(k);
+                    c.mute = false;
+                    c.solo = false;
+                    c.visible = true;
+                    const rgb = SseGlobals.hex2rgb(c.color);
+                    c.red = rgb[0];
+                    c.green = rgb[1];
+                    c.blue = rgb[2];
+                });
+            }
         }
         return this._classesData;
     }
@@ -253,13 +344,29 @@ export default class SseEditor3d extends React.Component {
         this.saveAll();
     }
 
+    get backgroundIndex() {
+        const schema = this.meta && this.meta.labelSchema;
+        if (!schema) return 0;
+        const bg = schema.objects.find(o => o.label === 'background' && o.status === 'active');
+        return bg ? bg.index : 0;
+    }
+
     invalidateCounters() {
-        let i = 0;
-        this.activeSoc.labels.forEach(a => {
-            const arg = {classIndex: i, count: (this.cloudData.byClassIndex[i] || {size: 0}).size};
-            this.sendMsg("class-instance-count", arg);
-            i++;
-        });
+        const schema = this.meta && this.meta.labelSchema;
+        if (schema) {
+            schema.objects.forEach(o => {
+                this.sendMsg("class-instance-count", {
+                    classIndex: o.index,
+                    count: (this.cloudData.byClassIndex[o.index] || {size: 0}).size
+                });
+            });
+        } else if (this.activeSoc) {
+            let i = 0;
+            this.activeSoc.labels.forEach(() => {
+                this.sendMsg("class-instance-count", {classIndex: i, count: (this.cloudData.byClassIndex[i] || {size: 0}).size});
+                i++;
+            });
+        }
     }
 
     invalidateObjects() {
@@ -268,7 +375,7 @@ export default class SseEditor3d extends React.Component {
 
     deleteSelectedObject() {
         if (this.selectedObject) {
-            this.changeClassOfSelection(0);
+            this.changeClassOfSelection(this.backgroundIndex);
             this.objects.delete(this.selectedObject);
             this.selectedObject = undefined;
             this.sendMsg("object-select", {value: undefined});
@@ -327,7 +434,7 @@ export default class SseEditor3d extends React.Component {
         this.selection.forEach(idx => {
             if (ptsArray.indexOf(idx) != -1) {
                 ptsArray.splice(ptsArray.indexOf(idx), 1);
-                this.assignNewClass(idx, 0);
+                this.assignNewClass(idx, this.backgroundIndex);
                 if (this.autoFilterMode)
                     this.hideIndex(idx);
             }
@@ -401,30 +508,28 @@ export default class SseEditor3d extends React.Component {
         this.onMsg("selection-mode-remove", () => this.selectionMode = "remove");
 
         this.onMsg("classSelection", (arg) => {
-            this.activeClassIndex = arg.descriptor.classIndex;
+            const schema = this.meta && this.meta.labelSchema;
+            if (schema) {
+                const so = schema.objects.find(o => o.label === arg.descriptor.label && o.status === 'active');
+                this.activeClassIndex = so ? so.index : arg.descriptor.classIndex;
+            } else {
+                this.activeClassIndex = arg.descriptor.classIndex;
+            }
             this.changeClassOfSelection(this.activeClassIndex);
         });
 
         this.onMsg("active-soc", arg => {
-            if (!arg.value) {
-                return;
-            }
-            if (this.activeSoc !== arg.value) {
-                this.activeSoc = arg.value;
-                if (!this.meta) {
-                    this.start();
+            if (!arg.value) return;
+            const newSoc = arg.value;
+            if (this.activeSoc === newSoc && this.meta) return;
 
-                }
-                else {
-                    this._classesData = null;
-                    this.meta.socName = this.activeSoc.name;
-
-                    this.invalidateColor();
-                    this.displayAll();
-                    this.saveMeta();
-                }
-                this.generateColorCache();
+            if (!this.meta) {
+                this.activeSoc = newSoc;
+                this._startAfterSetChosen(arg.labelSchema, arg.needsSync);
+            } else {
+                this._resetToNewSet(newSoc);
             }
+            this.generateColorCache();
         });
 
         this.onMsg("view-camera", () => this.cameraPreset("camera"));
@@ -436,7 +541,11 @@ export default class SseEditor3d extends React.Component {
         this.onMsg("view-center", () => this.centerView());
 
 
-        this.sendMsg("editor-ready");
+        this.pendingServerMeta = SseSamples.findOne({url: this.props.imageUrl});
+        this.sendMsg("editor-ready", {
+            socName: this.pendingServerMeta && this.pendingServerMeta.socName,
+            labelSchema: this.pendingServerMeta && this.pendingServerMeta.labelSchema
+        });
 
         this.onMsg("autoFilter", ({value}) => {
             this.autoFilterMode = value;
@@ -876,7 +985,15 @@ export default class SseEditor3d extends React.Component {
             const data = this.cloudData[this.highlightedIndex];
             const pj = this.getPixel(data);
             if (pj) {
-                let message = this.activeSoc.labelForIndex(data.classIndex);
+                const schema = this.meta && this.meta.labelSchema;
+                let message;
+                if (schema && schema.objects[data.classIndex]) {
+                    message = schema.objects[data.classIndex].label;
+                } else if (this.activeSoc) {
+                    message = this.activeSoc.labelForIndex(data.classIndex);
+                } else {
+                    message = String(data.classIndex);
+                }
                 const oc = this.originalCoordinates(this.highlightedIndex);
                 message += " (x: " + round2(oc.x)
                     + "m, y: " + round2(oc.y)
@@ -1727,7 +1844,7 @@ export default class SseEditor3d extends React.Component {
                 break;
             case 'Delete':
                 this.selection.forEach(idx => {
-                    this.assignNewClass(idx, 0);
+                    this.assignNewClass(idx, this.backgroundIndex);
                 });
                 this.updateClassFilter();
                 break;
@@ -1962,9 +2079,18 @@ export default class SseEditor3d extends React.Component {
             }
             else{
                 if (labelArray) {
+                    const schema = this.meta && this.meta.labelSchema;
                     labelArray.forEach((v, i) => {
                         this.cloudData[i].classIndex = v;
-                        const rgb = this.activeSoc.colorForIndexAsRGBArray(v);
+                        let rgb;
+                        if (schema && schema.objects[v]) {
+                            rgb = SseGlobals.hex2rgb(schema.objects[v].color || '#888888');
+                        } else if (this.activeSoc) {
+                            try { rgb = this.activeSoc.colorForIndexAsRGBArray(v); }
+                            catch (e) { rgb = [0.5, 0.5, 0.5]; }
+                        } else {
+                            rgb = [0.5, 0.5, 0.5];
+                        }
                         colorArray.push(rgb[0], rgb[1], rgb[2]);
                     });
                 }
@@ -2057,19 +2183,32 @@ export default class SseEditor3d extends React.Component {
         }
     }
 
-    start() {
-        const serverMeta = SseSamples.findOne({url: this.props.imageUrl});
-        this.meta = serverMeta || {url: this.props.imageUrl};
-        if (serverMeta) {
-            this.meta.socName = serverMeta.socName;
-            this.sendMsg("active-soc-name", {value: this.meta.socName});
+    _broadcastSchemaDescriptors() {
+        const schema = this.meta && this.meta.labelSchema;
+        if (!schema) return;
+        this.sendMsg("active-schema-descriptors", {
+            value: schema.objects
+                .filter(o => o.status === 'active')
+                .map(o => Object.assign({}, o, {classIndex: o.index}))
+        });
+    }
+
+    _startAfterSetChosen(incomingLabelSchema, needsSync) {
+        const serverMeta = this.pendingServerMeta;
+        this.meta = serverMeta ? Object.assign({}, serverMeta) : {url: this.props.imageUrl};
+        this.meta.socName = this.activeSoc.name;
+        if (!incomingLabelSchema) {
+            this.meta.labelSchema = _labelSchemaFromLiveSet(this.activeSoc._config);
         } else {
-            this.meta.socName = this.activeSoc.name;
+            this.meta.labelSchema = incomingLabelSchema;
         }
-
+        this._classesData = null;
         this.sendMsg("currentSample", {data: this.meta});
-        const fileUrl = SseGlobals.getFileUrl(this.props.imageUrl);
+        this._loadAndDisplay(needsSync);
+    }
 
+    _loadAndDisplay(needsSync) {
+        const fileUrl = SseGlobals.getFileUrl(this.props.imageUrl);
         this.loadPCDFile(fileUrl).then(() => {
             this.rotateGeometry(this.meta.rotationX, this.meta.rotationY, this.meta.rotationZ);
             this.sendMsg("bottom-right-label", {message: "Loading labels..."});
@@ -2078,25 +2217,77 @@ export default class SseEditor3d extends React.Component {
                     this.sendMsg("bottom-right-label", {message: "Loading objects..."});
                     this.labelArray = result;
                     this.maxClassIndex = 0;
-                    for (var i = 0; i < this.labelArray.length; i++) {
-                        if (this.labelArray[i] > this.maxClassIndex) {
-                            this.maxClassIndex = this.labelArray[i];
-                        }
+                    for (let i = 0; i < this.labelArray.length; i++) {
+                        if (this.labelArray[i] > this.maxClassIndex) this.maxClassIndex = this.labelArray[i];
                     }
                     this.sendMsg("maximum-classIndex", {value: this.maxClassIndex});
+
+                    if (needsSync && this.meta.labelSchema) {
+                        const synced = _syncLabelSchema(
+                            this.activeSoc._config.objects,
+                            this.meta.labelSchema,
+                            this.labelArray
+                        );
+                        this.meta.labelSchema = {
+                            revision: synced.revision,
+                            settingsHash: synced.settingsHash,
+                            lastAcknowledgedRevision: synced.lastAcknowledgedRevision,
+                            objects: synced.objects
+                        };
+                        if (synced.remappedLabels) {
+                            this.labelArray = synced.remappedLabels;
+                            this._needsSaveLabelAfterSync = true;
+                        }
+                        this._classesData = null;
+                        this.saveMeta();
+                    }
                 }, () => {
                     this.saveBinaryLabels();
-                }).then(() => {
-                this.dataManager.loadBinaryFile(this.props.imageUrl + ".objects").then(result => {
-                    if (!result.forEach)
-                        result = undefined;
-                    this.display(result, this.positionArray, this.labelArray, this.rgbArray).then( ()=>{
-                        this.initDone();
-                    });
-                }, () => {
-                    this.initDone();
+                })
+                .then(() => {
+                    this.dataManager.loadBinaryFile(this.props.imageUrl + ".objects")
+                        .then(result => {
+                            if (!result || !result.forEach) result = undefined;
+                            this.display(result, this.positionArray, this.labelArray, this.rgbArray)
+                                .then(() => {
+                                    if (this._needsSaveLabelAfterSync) {
+                                        this._needsSaveLabelAfterSync = false;
+                                        this.saveBinaryLabels();
+                                    }
+                                    this._broadcastSchemaDescriptors();
+                                    this.initDone();
+                                });
+                        }, () => {
+                            this._broadcastSchemaDescriptors();
+                            this.initDone();
+                        });
                 });
-            });
         });
+    }
+
+    _resetToNewSet(newSoc) {
+        this.activeSoc = newSoc;
+        this.meta.socName = newSoc.name;
+        this.meta.labelSchema = _labelSchemaFromLiveSet(newSoc._config);
+        this._classesData = null;
+
+        const bgIdx = this.backgroundIndex;
+        if (this.cloudData) {
+            this.cloudData.byClassIndex = {};
+            this.cloudData.forEach(pt => { pt.classIndex = bgIdx; });
+            this.cloudData.byClassIndex[bgIdx] = new Set(this.cloudData);
+        }
+
+        this.objects.clear();
+        this.selectedObject = undefined;
+        this.sendMsg("objects-update", {value: this.objects});
+        this.sendMsg("object-select", {value: undefined});
+        this.activeClassIndex = bgIdx;
+
+        this.generateColorCache();
+        this.invalidateColor();
+        this.displayAll();
+        this._broadcastSchemaDescriptors();
+        this.saveAll();
     }
 }

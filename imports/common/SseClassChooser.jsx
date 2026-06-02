@@ -15,35 +15,57 @@ export default class SseClassChooser extends SseToolbar {
         this.classesSets = props.classesSets;
         this.classesSetByName = new Map();
         this.classesSets.map(cset => {
-            this.classesSetByName.set(cset.name, cset)
+            this.classesSetByName.set(cset.name, cset);
         });
         this.state = {
             counters: {},
-            soc: this.classesSets[0],
-            activeClassIndex: 0
+            soc: null,
+            activeClassIndex: 0,
+            mode: null,
+            schemaDescriptors: null,
+            diffData: null,
+            pendingSetChange: null,
+            setError: null,
         };
     }
 
-    getIcon(objDesc) {
-        if (MDI[objDesc.icon]) {
-            const Comp = MDI[objDesc.icon];
-            return <Comp/>;
-        } else {
-            return <MDI.Label/>;
+    _validateSet(soc) {
+        if (!soc.labels.has('background')) {
+            return {valid: false, error: `Set "${soc.name}" is missing required label "background".`};
         }
+        if (!soc.labels.has('orphan')) {
+            return {valid: false, error: `Set "${soc.name}" is missing required label "orphan".`};
+        }
+        return {valid: true};
     }
 
-    resolveClassesSet(name) {
-        const soc = name ? this.classesSetByName.get(name) : undefined;
-        if (soc) {
-            return soc;
+    _diffSchema(liveSocConfig, labelSchema) {
+        const liveByLabel = new Map(liveSocConfig.objects.map(o => [o.label, o]));
+        const activeSchemaObjs = labelSchema.objects.filter(o => o.status === 'active');
+        const schemaByLabel = new Map(activeSchemaObjs.map(o => [o.label, o]));
+        const added = [], removed = [], changed = [];
+        for (const [label, liveObj] of liveByLabel) {
+            if (!schemaByLabel.has(label)) {
+                added.push({label, color: liveObj.color});
+            } else {
+                const so = schemaByLabel.get(label);
+                if ((liveObj.color || '') !== (so.color || '')) {
+                    changed.push({label, fromColor: so.color, toColor: liveObj.color});
+                }
+            }
         }
-        if (name) {
-            console.warn(
-                `[SSE] Set of classes "${name}" is not in settings; using "${this.classesSets[0].name}".`
-            );
+        for (const [label] of schemaByLabel) {
+            if (!liveByLabel.has(label)) removed.push(label);
         }
-        return this.classesSets[0];
+        return {added, removed, changed};
+    }
+
+    getIcon(objDesc) {
+        if (objDesc && MDI[objDesc.icon]) {
+            const Comp = MDI[objDesc.icon];
+            return <Comp/>;
+        }
+        return <MDI.Label/>;
     }
 
     messages() {
@@ -60,26 +82,58 @@ export default class SseClassChooser extends SseToolbar {
             this.invalidate();
         });
 
-        this.onMsg("currentSample", (arg) => {
-            if (arg.data.socName)
-                this.changeClassesSet(arg.data.socName);
-        });
-
         this.onMsg("editor-ready", (arg) => {
-            const socName = arg && arg.value && arg.value.socName;
-            this.sendMsg("active-soc", {value: this.resolveClassesSet(socName)});
+            const socName = arg && arg.socName;
+            const labelSchema = arg && arg.labelSchema;
+
+            if (!socName) {
+                this.setState({mode: 'required-set-chooser', setError: null});
+                return;
+            }
+
+            const soc = this.classesSetByName.get(socName);
+            if (!soc) {
+                this.setState({
+                    mode: 'required-set-chooser',
+                    setError: `Set "${socName}" is no longer in settings. Please choose a new set.`
+                });
+                return;
+            }
+
+            const validation = this._validateSet(soc);
+            if (!validation.valid) {
+                this.setState({mode: 'required-set-chooser', setError: validation.error});
+                return;
+            }
+
+            if (!labelSchema) {
+                // Mongo record exists with socName but no schema = legacy cloud
+                this.setState({soc, mode: 'legacy-error', setError: null});
+                return;
+            }
+
+            const diff = this._diffSchema(soc._config, labelSchema);
+            if (diff.added.length > 0 || diff.removed.length > 0 || diff.changed.length > 0) {
+                this.setState({
+                    soc,
+                    mode: 'schema-diff',
+                    diffData: {...diff, pendingLabelSchema: labelSchema, pendingLiveSoc: soc}
+                });
+            } else {
+                this.setState({soc, mode: null});
+                this.sendMsg("active-soc", {value: soc, labelSchema});
+            }
         });
 
         this.onMsg("active-soc", (arg) => {
             this.soc = arg.value;
             this.displayAll();
-
         });
 
-        this.onMsg("active-soc-name", (arg) => {
-            this.sendMsg("active-soc", {value: this.resolveClassesSet(arg.value)});
+        this.onMsg("active-schema-descriptors", (arg) => {
+            this.setState({schemaDescriptors: arg.value, counters: {}});
+            this.pendingState.counters = {};
         });
-
     }
 
     displayAll() {
@@ -88,7 +142,7 @@ export default class SseClassChooser extends SseToolbar {
                 if (k.toString().startsWith("mute") || k.toString().startsWith("solo")) {
                     delete this.state[k];
                 }
-            })
+            });
         }
     }
 
@@ -107,103 +161,241 @@ export default class SseClassChooser extends SseToolbar {
         }
     }
 
-    changeClassesSet(name) {
-        let newSoc = name ? this.classesSetByName.get(name) : undefined;
-        if (!newSoc) {
-            if (name) {
-                console.warn(
-                    `[SSE] Set of classes "${name}" is not in settings; using "${this.classesSets[0].name}".`
-                );
-            }
-            newSoc = this.classesSets[0];
+    _pickSetFromChooser(setName) {
+        const soc = this.classesSetByName.get(setName);
+        if (!soc) return;
+        const validation = this._validateSet(soc);
+        if (!validation.valid) {
+            this.setState({setError: validation.error});
+            return;
         }
-        const usedClasses = Object.keys(this.state.counters).filter(x => this.state.counters[x] > 0);
-        const missing = [];
-        usedClasses.forEach(x => {
-            if (!newSoc.labels.has(x)) {
-                missing.push(x);
-            }
-        });
-        //debugger;
-        const t = this.state.counters;
-        let maxClassIndex = Math.max(...Object.keys(t).filter(k => t[k] > 0));
-
-        if (newSoc.descriptors.length >= maxClassIndex) {
-            this.setState({
-                soc: newSoc,
-                classes: newSoc.descriptors,
-                mode: "normal",
-                activeClassIndex: 0
-            });
-            this.sendMsg("active-soc", {value: newSoc});
-
+        if (this.state.mode === 'required-set-chooser') {
+            this.setState({soc, mode: null, setError: null, activeClassIndex: 0, counters: {}, schemaDescriptors: null});
+            this.pendingState.counters = {};
+            this.sendMsg("active-soc", {value: soc, labelSchema: null});
+        } else {
+            this.setState({mode: 'set-change-warning', pendingSetChange: setName});
         }
-        else
-            this.sendMsg("alert",
-                {
-                    variant: "error",
-                    forceCloseMessage: "dismiss-not-enough-classes",
-                    message: "This set of classes only supports " + newSoc.descriptors.length
-                    + " different classes (index from 0 to " + (newSoc.descriptors.length - 1) +
-                    ") but the current maximum class index for your data is " + maxClassIndex
-                });
     }
 
-    shouldComponentUpdate(np, ns) {
-        if (this.state.mode == "set-chooser" && ns.mode == "normal")
-            this.sendMsg("dismiss-not-enough-classes");
-            return true;
-    }
-
-    renderDialog() {
-        return (<Dialog open={this.state.mode == "set-chooser"}>
-            <DialogTitle>Sets of Object Classes</DialogTitle>
-            <DialogContent>
-                <div className="vflex">
-                    <span>Choose which set to use:</span>
-                    <div className="hflex w100 wrap">
-                        {this.classesSets.map((cset) => (
-                            <Button
-                                onClick={(e) => this.changeClassesSet(cset.name)}
-                                key={cset.name}>{cset.name + (cset.name == this.state.soc.name ? " (current)" : "")}</Button>
-                        ))
-                        }
-                    </div>
-                </div>
-            </DialogContent>
-            <DialogActions>
-                <Button onClick={() => {
-                    this.setState({mode: "normal"})
-                }} color="primary">
-                    Cancel
-                </Button>
-            </DialogActions>
-        </Dialog>)
+    _confirmSetChange() {
+        const name = this.state.pendingSetChange;
+        const newSoc = this.classesSetByName.get(name);
+        if (!newSoc) return;
+        const validation = this._validateSet(newSoc);
+        if (!validation.valid) {
+            this.setState({mode: null, pendingSetChange: null});
+            this.sendMsg("alert", {variant: "error", message: validation.error});
+            return;
+        }
+        this.setState({soc: newSoc, mode: null, pendingSetChange: null, activeClassIndex: 0, counters: {}, schemaDescriptors: null});
+        this.pendingState.counters = {};
+        this.sendMsg("active-soc", {value: newSoc, labelSchema: null, resetSet: true});
     }
 
     initSetChange() {
         this.setState({mode: "set-chooser"});
     }
 
+    shouldComponentUpdate(np, ns) {
+        if (this.state.mode == "set-chooser" && ns.mode == "normal")
+            this.sendMsg("dismiss-not-enough-classes");
+        return true;
+    }
+
+    _renderRequiredSetChooser() {
+        const {setError} = this.state;
+        return (
+            <Dialog open={true}>
+                <DialogTitle>Choose a Set of Object Classes</DialogTitle>
+                <DialogContent>
+                    <div className="vflex">
+                        {setError && (
+                            <span style={{color: '#f44336', marginBottom: 8}}>{setError}</span>
+                        )}
+                        <span>Select a labeling set to start annotating:</span>
+                        <div className="hflex w100 wrap" style={{marginTop: 8}}>
+                            {this.classesSets.map((cset) => {
+                                const v = this._validateSet(cset);
+                                return (
+                                    <Button
+                                        key={cset.name}
+                                        disabled={!v.valid}
+                                        title={v.valid ? '' : v.error}
+                                        onClick={() => this._pickSetFromChooser(cset.name)}>
+                                        {cset.name}
+                                    </Button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+        );
+    }
+
+    _renderLegacyError() {
+        const {soc} = this.state;
+        return (
+            <Dialog open={true}>
+                <DialogTitle>No Label Schema</DialogTitle>
+                <DialogContent>
+                    <div className="vflex" style={{gap: 8}}>
+                        <span>
+                            This cloud was annotated before label schema pinning was introduced and
+                            has no schema record. The meaning of stored indices cannot be verified.
+                        </span>
+                        <span>
+                            <strong>Recommended:</strong> re-export your labels from a previous version and
+                            re-import into a fresh cloud.
+                        </span>
+                        <span style={{color: '#ff9800'}}>
+                            <strong>Escape hatch:</strong> you can create a schema from the current
+                            settings, but stored indices may already have wrong semantics.
+                        </span>
+                    </div>
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        color="secondary"
+                        onClick={() => {
+                            this.setState({mode: null});
+                            this.sendMsg("active-soc", {value: soc, labelSchema: null, forceCreateSchema: true});
+                        }}>
+                        Create schema from current settings
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        );
+    }
+
+    _renderSetChooserDialog() {
+        const {soc} = this.state;
+        return (
+            <Dialog open={true}>
+                <DialogTitle>Sets of Object Classes</DialogTitle>
+                <DialogContent>
+                    <div className="vflex">
+                        <span>Choose which set to use:</span>
+                        <div className="hflex w100 wrap">
+                            {this.classesSets.map((cset) => {
+                                const v = this._validateSet(cset);
+                                return (
+                                    <Button
+                                        key={cset.name}
+                                        disabled={!v.valid}
+                                        title={v.valid ? '' : v.error}
+                                        onClick={() => this._pickSetFromChooser(cset.name)}>
+                                        {cset.name + (soc && cset.name === soc.name ? " (current)" : "")}
+                                    </Button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => this.setState({mode: null})} color="primary">Cancel</Button>
+                </DialogActions>
+            </Dialog>
+        );
+    }
+
+    _renderSetChangeWarningDialog() {
+        const {pendingSetChange} = this.state;
+        return (
+            <Dialog open={true}>
+                <DialogTitle>Change Class Set</DialogTitle>
+                <DialogContent>
+                    <span>
+                        Changing to <strong>{pendingSetChange}</strong> will reset all current labels
+                        and objects for this cloud. This cannot be undone. Continue?
+                    </span>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => this.setState({mode: null, pendingSetChange: null})}>Cancel</Button>
+                    <Button onClick={() => this._confirmSetChange()} color="secondary">Reset and Change</Button>
+                </DialogActions>
+            </Dialog>
+        );
+    }
+
+    _renderSchemaDiffDialog() {
+        const {diffData} = this.state;
+        if (!diffData) return null;
+        const {added, removed, changed, pendingLabelSchema, pendingLiveSoc} = diffData;
+        return (
+            <Dialog open={true} maxWidth="sm" fullWidth>
+                <DialogTitle>Label Schema Updated</DialogTitle>
+                <DialogContent>
+                    <div className="vflex" style={{gap: 8}}>
+                        <span>The settings for <strong>{pendingLiveSoc && pendingLiveSoc.name}</strong> have changed since your last session:</span>
+                        {added.length > 0 && (
+                            <div>
+                                <strong>Added labels:</strong>
+                                {added.map(a => (
+                                    <div key={a.label} style={{display: 'flex', alignItems: 'center', gap: 6, marginTop: 2}}>
+                                        <span style={{width: 14, height: 14, background: a.color, display: 'inline-block', border: '1px solid #888', flexShrink: 0}}/>
+                                        {a.label}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {removed.length > 0 && (
+                            <div>
+                                <strong>Removed labels</strong> (points will be reassigned to <em>orphan</em>):
+                                {removed.map(r => <div key={r} style={{marginTop: 2}}>{r}</div>)}
+                            </div>
+                        )}
+                        {changed.length > 0 && (
+                            <div>
+                                <strong>Color changes:</strong>
+                                {changed.map(c => (
+                                    <div key={c.label} style={{display: 'flex', alignItems: 'center', gap: 6, marginTop: 2}}>
+                                        <span style={{width: 14, height: 14, background: c.fromColor, display: 'inline-block', border: '1px solid #888', flexShrink: 0}}/>
+                                        <span>→</span>
+                                        <span style={{width: 14, height: 14, background: c.toColor, display: 'inline-block', border: '1px solid #888', flexShrink: 0}}/>
+                                        {c.label}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        color="primary"
+                        onClick={() => {
+                            const {pendingLabelSchema: schema, pendingLiveSoc: liveSoc} = this.state.diffData;
+                            this.setState({soc: liveSoc, mode: null, diffData: null, activeClassIndex: 0, schemaDescriptors: null});
+                            this.pendingState.counters = {};
+                            this.sendMsg("active-soc", {value: liveSoc, labelSchema: schema, needsSync: true});
+                        }}>
+                        OK
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        );
+    }
+
     render() {
+        const {mode, soc, schemaDescriptors} = this.state;
         const smallIconStyle = {width: "25px", height: "25px", color: "darkgray"};
         const smallIconSelected = {width: "25px", height: "25px", color: "red"};
-        return (
+        const displayDescriptors = schemaDescriptors || (soc ? soc.descriptors : []);
 
+        return (
             <div className="sse-class-chooser vflex scroller"
                  style={{"backgroundColor": "#393536", "padding": "5px 5px 0 0"}}>
-                {this.state.soc.descriptors.map((objDesc, idx) => {
+                {displayDescriptors.map((objDesc, idx) => {
+                    if (objDesc.status === 'orphaned') return null;
                     const isSelected = objDesc.classIndex == this.state.activeClassIndex;
-                    return <div className="hflex flex-align-items-center no-shrink" key={objDesc.label}>
-                        <ChevronRight className="chevron" color={isSelected ? "primary" : "disabled"}/>
-                        <Button className="class-button"
-                                onDoubleClick={() => this.sendMsg("class-multi-select", {name: objDesc.label})}
-                                onClick={() => {
-                                    this.sendMsg('classSelection', {descriptor: objDesc});
-                                }}
-                                style={
-                                    {
-
+                    return (
+                        <div className="hflex flex-align-items-center no-shrink" key={objDesc.label}>
+                            <ChevronRight className="chevron" color={isSelected ? "primary" : "disabled"}/>
+                            <Button className="class-button"
+                                    onDoubleClick={() => this.sendMsg("class-multi-select", {name: objDesc.label})}
+                                    onClick={() => this.sendMsg('classSelection', {descriptor: objDesc})}
+                                    style={{
                                         "width": "100%",
                                         "minHeight": "20px",
                                         "margin": "1px",
@@ -212,30 +404,33 @@ export default class SseClassChooser extends SseToolbar {
                                         "border": isSelected ? "solid 1px #E53935" : "solid 1px black",
                                         "padding": "0 3px"
                                     }}>
-                            <div
-                                className="hflex flex-align-items-center w100">
-                                {this.getIcon(objDesc)}{objDesc.label}
-                            </div>
-                            <sup>{this.state.counters[objDesc.classIndex] > 0 ? this.state.counters[objDesc.classIndex] : ""}</sup>
-                        </Button>
-                        {this.props.mode == "3d" ?
-                            <div className="hflex">
-                                <IconButton
-                                    onClick={() => this.muteOrSolo("mute", objDesc, idx)}
-                                    style={this.state["mute" + idx] ? smallIconSelected : smallIconStyle}>
-                                    <EyeOff/>
-                                </IconButton>
-                                <IconButton
-                                    onClick={() => this.muteOrSolo("solo", objDesc, idx)}
-                                    style={this.state["solo" + idx] ? smallIconSelected : smallIconStyle}>
-                                    <Eye/>
-                                </IconButton>
-
-                            </div> : null}
-                    </div>
+                                <div className="hflex flex-align-items-center w100">
+                                    {this.getIcon(objDesc)}{objDesc.label}
+                                </div>
+                                <sup>{this.state.counters[objDesc.classIndex] > 0 ? this.state.counters[objDesc.classIndex] : ""}</sup>
+                            </Button>
+                            {this.props.mode == "3d" ?
+                                <div className="hflex">
+                                    <IconButton
+                                        onClick={() => this.muteOrSolo("mute", objDesc, idx)}
+                                        style={this.state["mute" + idx] ? smallIconSelected : smallIconStyle}>
+                                        <EyeOff/>
+                                    </IconButton>
+                                    <IconButton
+                                        onClick={() => this.muteOrSolo("solo", objDesc, idx)}
+                                        style={this.state["solo" + idx] ? smallIconSelected : smallIconStyle}>
+                                        <Eye/>
+                                    </IconButton>
+                                </div> : null}
+                        </div>
+                    );
                 })}
-                <Button onClick={() => this.initSetChange()}>Classes Sets</Button>
-                {this.renderDialog()}
+                {soc && <Button onClick={() => this.initSetChange()}>Classes Sets</Button>}
+                {mode === 'required-set-chooser' && this._renderRequiredSetChooser()}
+                {mode === 'legacy-error' && this._renderLegacyError()}
+                {mode === 'set-chooser' && this._renderSetChooserDialog()}
+                {mode === 'set-change-warning' && this._renderSetChangeWarningDialog()}
+                {mode === 'schema-diff' && this._renderSchemaDiffDialog()}
             </div>
         );
     }
