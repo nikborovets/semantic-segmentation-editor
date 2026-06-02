@@ -2289,7 +2289,12 @@ export default class SseEditor3d extends React.Component {
         this.sendMsg("objects-update", {value: this.objects});
         this.sendMsg("object-select", {value: undefined});
 
-        // Re-render with new schema colors, then persist
+        // Re-render with new schema colors, then persist.
+        // Automatically enable RGB view so the cloud is visible (not all-black background).
+        // This mirrors the "fresh load" experience the user expects.
+        if (this.rgbArray && this.rgbArray.length > 0) {
+            this.displayRgb = true;
+        }
         this.generateColorCache();
         this.display([], this.positionArray, this.cloudData.map(p => p.classIndex), this.rgbArray)
             .then(() => {
