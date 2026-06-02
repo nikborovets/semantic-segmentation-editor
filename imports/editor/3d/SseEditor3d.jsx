@@ -1730,6 +1730,8 @@ export default class SseEditor3d extends React.Component {
                 this.ctrlDown = true;
                 break;
             case 'Delete':
+            case 'd':
+            case 'D':
                 this.selection.forEach(idx => {
                     this.assignNewClass(idx, 0);
                 });
