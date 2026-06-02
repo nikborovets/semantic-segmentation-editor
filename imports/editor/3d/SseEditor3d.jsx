@@ -2255,6 +2255,7 @@ export default class SseEditor3d extends React.Component {
                                         this.saveBinaryLabels();
                                     }
                                     this._broadcastSchemaDescriptors();
+                                    this.invalidateCounters();
                                     this.initDone();
                                 });
                         }, () => {
@@ -2288,6 +2289,7 @@ export default class SseEditor3d extends React.Component {
         this.invalidateColor();
         this.displayAll();
         this._broadcastSchemaDescriptors();
+        this.invalidateCounters();
         this.saveAll();
     }
 }
