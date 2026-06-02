@@ -5,6 +5,5 @@ node_modules
 .vscode/*
 .cursor/*
 pcd_samples/*
-room_labels_new.json
 sse-internal-local/*
 *.log

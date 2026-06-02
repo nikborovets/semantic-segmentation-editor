@@ -31,15 +31,9 @@ function generateJson(req, res, next) {
     res.setHeader('Content-Type', 'application/json');
     const item = SseSamples.findOne({url: req.url});
     if (item) {
-        const schema = item.labelSchema;
+        const soc = setsOfClassesMap.get(item.socName);
         item.objects.forEach(obj => {
-            if (schema && schema.objects && schema.objects[obj.classIndex]) {
-                const so = schema.objects[obj.classIndex];
-                obj.label = so.status === 'orphaned' ? 'orphan' : so.label;
-            } else {
-                const soc = setsOfClassesMap.get(item.socName);
-                obj.label = soc && soc.objects[obj.classIndex] ? soc.objects[obj.classIndex].label : 'unknown';
-            }
+            obj.label = soc && soc.objects[obj.classIndex] ? soc.objects[obj.classIndex].label : String(obj.classIndex);
         });
         res.end(JSON.stringify(item, null, 1));
     } else {
