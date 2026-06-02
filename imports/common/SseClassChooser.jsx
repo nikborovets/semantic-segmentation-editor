@@ -306,10 +306,15 @@ export default class SseClassChooser extends SseToolbar {
             <Dialog open={true}>
                 <DialogTitle>Change Class Set</DialogTitle>
                 <DialogContent>
-                    <span>
-                        Changing to <strong>{pendingSetChange}</strong> will reset all current labels
-                        and objects for this cloud. This cannot be undone. Continue?
-                    </span>
+                    <div className="vflex" style={{gap: 6}}>
+                        <span>Switching to <strong>{pendingSetChange}</strong>:</span>
+                        <ul style={{margin: '4px 0', paddingLeft: 20}}>
+                            <li>Labels with matching names will be remapped to the new set.</li>
+                            <li>Labels not found in the new set will be reassigned to <em>orphan</em>.</li>
+                            <li>Object groupings will be remapped by name as well.</li>
+                        </ul>
+                        <span style={{color: '#ff9800'}}>This cannot be undone. Continue?</span>
+                    </div>
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => this.setState({mode: null, pendingSetChange: null})}>Cancel</Button>
