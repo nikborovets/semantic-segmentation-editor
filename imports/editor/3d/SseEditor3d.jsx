@@ -2267,46 +2267,40 @@ export default class SseEditor3d extends React.Component {
     }
 
     _resetToNewSet(newSoc) {
-        // Switch schema first so every subsequent call uses new schema
         this.activeSoc = newSoc;
         this.meta.socName = newSoc.name;
         this.meta.labelSchema = _labelSchemaFromLiveSet(newSoc._config);
-        this._classesData = null; // force rebuild from new schema on next access
+        this._classesData = null;
 
-        const bgIdx = this.backgroundIndex; // uses new schema
-
-        // Reset all point labels to background — no connection to old set
-        if (this.cloudData) {
-            this.cloudData.byClassIndex = {};
-            this.cloudData.forEach(pt => { pt.classIndex = bgIdx; });
-            this.cloudData.byClassIndex[bgIdx] = new Set(this.cloudData);
-        }
-
-        // Discard all objects from old set
         this.objects.clear();
         this.selectedObject = undefined;
-        this.activeClassIndex = bgIdx;
+        this.activeClassIndex = this.backgroundIndex;
         this.sendMsg("objects-update", {value: this.objects});
         this.sendMsg("object-select", {value: undefined});
 
-        // Re-render with new schema colors, then persist.
-        // Automatically enable RGB view so the cloud is visible (not all-black background).
-        // This mirrors the "fresh load" experience the user expects.
+        // Persist new socName immediately — page reload before display completes must see the new set
+        this.saveMeta();
+
+        this.generateColorCache();
+
+        // Enable RGB display before reloading PCD so display() builds the color buffer from sensor data
         if (this.rgbArray && this.rgbArray.length > 0) {
             this.displayRgb = true;
         }
-        this.generateColorCache();
-        this.display([], this.positionArray, this.cloudData.map(p => p.classIndex), this.rgbArray)
-            .then(() => {
-                this._broadcastSchemaDescriptors();
-                this.invalidateCounters();
-                // Save after display so disk writes only happen when render succeeded
-                this.saveBinaryLabels();
-                this.saveBinaryObjects();
-                this.saveMeta();
-                if (this.rgbArray && this.rgbArray.length > 0) {
-                    this.sendMsg("show-rgb-toggle");
-                }
-            });
+
+        // Reload PCD to get original embedded state — discards all user edits, shows the cloud as it
+        // was before any annotation (matching what the user sees on first load with a fresh set)
+        const fileUrl = SseGlobals.getFileUrl(this.props.imageUrl);
+        this.loadPCDFile(fileUrl).then(() => {
+            this.rotateGeometry(this.meta.rotationX, this.meta.rotationY, this.meta.rotationZ);
+            this._broadcastSchemaDescriptors();
+            this.invalidateCounters();
+            this.saveBinaryLabels();
+            this.saveBinaryObjects();
+            this.saveMeta();
+            if (this.rgbArray && this.rgbArray.length > 0) {
+                this.sendMsg("show-rgb-toggle");
+            }
+        });
     }
 }
