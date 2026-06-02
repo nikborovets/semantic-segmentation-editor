@@ -2283,15 +2283,14 @@ export default class SseEditor3d extends React.Component {
         // Persist new socName immediately — page reload before display completes must see the new set
         this.saveMeta();
 
+        // Turn off RGB display on set change: the rgb field in these PCDs stores the label index,
+        // not true sensor colors, so enabling RGB mode produces incorrect blue rendering.
+        this.displayRgb = false;
+
         this.generateColorCache();
 
-        // Enable RGB display before reloading PCD so display() builds the color buffer from sensor data
-        if (this.rgbArray && this.rgbArray.length > 0) {
-            this.displayRgb = true;
-        }
-
-        // Reload PCD to get original embedded state — discards all user edits, shows the cloud as it
-        // was before any annotation (matching what the user sees on first load with a fresh set)
+        // Reload PCD to get its original embedded labels — discards all user edits, shows the cloud
+        // as it was on first load (PCD-embedded label indices rendered with the new schema's colors)
         const fileUrl = SseGlobals.getFileUrl(this.props.imageUrl);
         this.loadPCDFile(fileUrl).then(() => {
             this.rotateGeometry(this.meta.rotationX, this.meta.rotationY, this.meta.rotationZ);
