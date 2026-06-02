@@ -71,6 +71,7 @@ export default class SseClassChooser extends SseToolbar {
 
         this.onMsg("active-soc", (arg) => {
             this.soc = arg.value;
+            this.setState({soc: arg.value});
             this.displayAll();
         });
     }
