@@ -28,7 +28,7 @@ export default class SseTooltips3d extends React.Component {
             <div id="autoFilterCommandHelp">
                 <p>If an object is selected, only object's points are displayed</p>
                 <p>Otherwise the first selection gesture reduce displayed points</p>
-                <p>Right click anywhere without dragging to display again all points</p>
+                <p>Use Center View (X) to fit all points on screen</p>
             </div>
             <div id="viewCameraCommandHelp">
                 <p>Move the camera to the origin.</p>

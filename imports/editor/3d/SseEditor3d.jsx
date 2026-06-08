@@ -890,12 +890,8 @@ export default class SseEditor3d extends React.Component {
                 if (!this.autoFilterMode && this.autoFocusMode)
                     this.subsetFocus(this.selection);
             } else {
-                if (!this.mouse.dragged) {
-                    if (this.selection.size > 0) {
-                        this.clearSelection();
-                    } else {
-                        this.displayAll();
-                    }
+                if (!this.mouse.dragged && this.selection.size > 0) {
+                    this.clearSelection();
                 }
             }
         }
@@ -1831,7 +1827,6 @@ export default class SseEditor3d extends React.Component {
         if (this.mouse.dragged < 4 && this.mouseTargetIndex == undefined
             && (ev.button != 1 && !this.ctrlDown)) {
             this.clearSelection();
-            this.displayAll();
         }
 
         if (this.mouse.dragged < 4 && this.pendingOrientationArrow) {
