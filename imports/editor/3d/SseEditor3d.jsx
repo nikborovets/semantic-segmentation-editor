@@ -29,22 +29,10 @@ const moduloHalfPI = (x) => modulo(x + PI) - PI;
 const round2 = (x) => Math.round(x * 100) / 100;
 const SAVE_FAILURE_ALERT_THROTTLE_MS = 30000;
 const SAVE_STATUS = {
-    saved: {
-        message: "Saved",
-        title: "All latest changes were written to labels, objects, and metadata. Refresh is safe."
-    },
-    saving: {
-        message: "Saving...",
-        title: "Saving is still in progress. Do not refresh the page until this changes to Saved."
-    },
-    unsaved: {
-        message: "Unsaved changes",
-        title: "The last save attempt did not reach the server. Refreshing now will lose the latest changes."
-    },
-    connectionLost: {
-        message: "Connection lost",
-        title: "The Meteor connection is disconnected or unstable. Binary saves may also fail; wait for Saved before refreshing."
-    }
+    saved: {message: "Saved"},
+    saving: {message: "Saving..."},
+    unsaved: {message: "Unsaved changes"},
+    connectionLost: {message: "Connection lost"}
 };
 
 export default class SseEditor3d extends React.Component {

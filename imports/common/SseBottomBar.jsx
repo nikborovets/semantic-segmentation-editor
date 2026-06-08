@@ -11,6 +11,8 @@ import SseMsg from "./SseMsg";
 import $ from "jquery";
 import tippy from "tippy.js";
 
+const SAVE_STATUS_HELP = "#saveStatusHelp";
+
 class SseBottomBar extends React.Component {
 
     constructor() {
@@ -51,16 +53,17 @@ class SseBottomBar extends React.Component {
     }
 
     setupSaveStatusTooltip() {
-        if (!this.saveStatusNode || !this.state.saveStatus || !this.state.saveStatus.title)
+        if (!this.saveStatusNode || !$(SAVE_STATUS_HELP).length)
             return;
 
         if (this.saveStatusNode._tippy)
-            this.saveStatusNode._tippy.destroy();
+            return;
 
         tippy(this.saveStatusNode, {
             theme: 'sse',
             arrow: true,
-            delay: [200, 0]
+            delay: [200, 0],
+            html: SAVE_STATUS_HELP
         });
     }
 
@@ -92,6 +95,7 @@ class SseBottomBar extends React.Component {
     }
 
     render() {
+        const saveStatusHelp = $(SAVE_STATUS_HELP).length ? SAVE_STATUS_HELP : "";
 
         return (
             <div className={(this.props.className || "") + " sse-bottom-bar"}
@@ -114,7 +118,8 @@ class SseBottomBar extends React.Component {
                         <div
                             className={"sse-save-status " + (this.state.saveStatus.state || "")}
                             ref={node => this.saveStatusNode = node}
-                            title={this.state.saveStatus.title}>
+                            title="Save status"
+                            data-tippy-html={saveStatusHelp}>
                             {this.state.saveStatus.message}
                         </div>
                     </div> : null}
