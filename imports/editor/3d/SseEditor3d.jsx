@@ -1785,6 +1785,7 @@ export default class SseEditor3d extends React.Component {
                     this.assignNewClass(idx, 0);
                 });
                 this.updateClassFilter();
+                this.invalidateCounters();
                 this.saveAll();
                 break;
         }
