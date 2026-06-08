@@ -233,6 +233,43 @@ button {
   display: inline
 }
 
+.sse-bottom-bar {
+  position: relative;
+}
+
+.sse-save-status-container {
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+}
+
+.sse-save-status {
+  color: @textColor;
+  background-color: #525252;
+  border-radius: 4px;
+  line-height: 20px;
+  min-width: 105px;
+  padding-left: 6px;
+  padding-right: 6px;
+  text-align: center;
+  white-space: nowrap;
+
+  &.saved {
+    background-color: #2E7D32;
+  }
+
+  &.saving {
+    background-color: #616161;
+  }
+
+  &.unsaved,
+  &.connectionLost {
+    background-color: @red;
+  }
+}
+
 .sse-object-toolbar {
   height: 80px;
   background-color: @darkgray;

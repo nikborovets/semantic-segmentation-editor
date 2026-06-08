@@ -1,4 +1,6 @@
 import {Random} from 'meteor/random';
+import {Meteor} from 'meteor/meteor';
+import {Tracker} from 'meteor/tracker';
 
 import React from 'react';
 import * as THREE from 'three';
@@ -25,6 +27,25 @@ const HALFPI = PI / 2;
 const modulo = (x) => (x % DOUBLEPI + DOUBLEPI) % DOUBLEPI;
 const moduloHalfPI = (x) => modulo(x + PI) - PI;
 const round2 = (x) => Math.round(x * 100) / 100;
+const SAVE_FAILURE_ALERT_THROTTLE_MS = 30000;
+const SAVE_STATUS = {
+    saved: {
+        message: "Saved",
+        title: "All latest changes were written to labels, objects, and metadata. Refresh is safe."
+    },
+    saving: {
+        message: "Saving...",
+        title: "Saving is still in progress. Do not refresh the page until this changes to Saved."
+    },
+    unsaved: {
+        message: "Unsaved changes",
+        title: "The last save attempt did not reach the server. Refreshing now will lose the latest changes."
+    },
+    connectionLost: {
+        message: "Connection lost",
+        title: "The Meteor connection is disconnected or unstable. Binary saves may also fail; wait for Saved before refreshing."
+    }
+};
 
 export default class SseEditor3d extends React.Component {
     constructor() {
@@ -51,6 +72,11 @@ export default class SseEditor3d extends React.Component {
         this.pixelProjection = new Map();
         this.highlightedIndex = undefined;
         this.dataManager = new SseDataManager();
+        this.saveAttemptId = 0;
+        this.saveStatusState = undefined;
+        this.saveStateBeforeConnectionLoss = undefined;
+        this.lastSaveFailureAlertAt = 0;
+        this.ddpConnected = true;
         
         this.tweenDuration = 500;
 
@@ -350,6 +376,17 @@ export default class SseEditor3d extends React.Component {
     componentDidMount() {
         SseMsg.register(this);
         this.init();
+        this.connectionTracker = Tracker.autorun(() => {
+            const connected = Meteor.status().connected;
+            this.ddpConnected = connected;
+            if (!connected) {
+                if (this.saveStatusState !== "connectionLost")
+                    this.saveStateBeforeConnectionLoss = this.saveStatusState;
+                this.updateSaveStatus("connectionLost");
+            } else if (this.saveStatusState === "connectionLost") {
+                this.updateSaveStatus(this.saveStateBeforeConnectionLoss);
+            }
+        });
         const changePointSize = (amount) => {
             const withAttenuation = {min: 0.01, max: .5, increment: 0.01};
             const withoutAttenuation = {min: 1, max: 5, increment: 0.5};
@@ -421,7 +458,7 @@ export default class SseEditor3d extends React.Component {
 
                     this.invalidateColor();
                     this.displayAll();
-                    this.saveMeta();
+                    this.saveMeta().catch(() => this.updateSaveStatus("unsaved"));
                 }
                 this.generateColorCache();
             }
@@ -502,6 +539,8 @@ export default class SseEditor3d extends React.Component {
     }
 
     componentWillUnmount(){
+        if (this.connectionTracker)
+            this.connectionTracker.stop();
         SseMsg.unregister(this);
         this.canvasContainer.removeEventListener("mousedown", this.mouseDown.bind(this), false);
         this.canvasContainer.removeEventListener("mousemove", this.mouseMove.bind(this), false);
@@ -1295,17 +1334,23 @@ export default class SseEditor3d extends React.Component {
         this.meta.rotationY = ry || 0;
         this.meta.rotationZ = rz || 0;
         this.cloudGeometry.rotateX(this.meta.rotationX).rotateY(this.meta.rotationY).rotateZ(this.meta.rotationZ);
-        this.display(this.objects, this.positionArray, this.labelArray, this.rgbArray);
-        this.saveMeta();
+        this.display(this.objects, this.positionArray, this.currentLabelArray(), this.rgbArray);
+        this.saveMeta().catch(() => this.updateSaveStatus("unsaved"));
     }
 
     resetRotation() {
         const {rotationX, rotationY, rotationZ} = this.meta;
         this.cloudGeometry.rotateZ(-rotationZ || 0).rotateY(-rotationY || 0).rotateX(-rotationX || 0);
-        this.display(undefined, this.positionArray, this.labelArray, this.rgbArray);
+        this.display(this.objects, this.positionArray, this.currentLabelArray(), this.rgbArray);
         this.meta.rotationX = this.meta.rotationY = this.meta.rotationZ = 0;
         this.updateGlobalBox();
         this.invalidatePosition();
+    }
+
+    currentLabelArray() {
+        if (this.cloudData)
+            return this.cloudData.map(pt => pt.classIndex);
+        return this.labelArray;
     }
 
     endPointcloudOrientation(upDirection, frontDirection) {
@@ -1703,6 +1748,8 @@ export default class SseEditor3d extends React.Component {
         const item = this.cloudData[pointIndex];
         this.cloudData.byClassIndex[item.classIndex].delete(item);
         item.classIndex = classIndex;
+        if (this.labelArray)
+            this.labelArray[pointIndex] = classIndex;
         //this.updateMaximumClassIndex();
         if (!this.cloudData.byClassIndex[item.classIndex])
             this.cloudData.byClassIndex[item.classIndex] = new Set();
@@ -1732,10 +1779,13 @@ export default class SseEditor3d extends React.Component {
             case 'Delete':
             case 'd':
             case 'D':
+                if (this.selectionIsEmpty())
+                    break;
                 this.selection.forEach(idx => {
                     this.assignNewClass(idx, 0);
                 });
                 this.updateClassFilter();
+                this.saveAll();
                 break;
         }
     }
@@ -2034,21 +2084,63 @@ export default class SseEditor3d extends React.Component {
     }
 
     saveBinaryLabels() {
-        this.dataManager.saveBinaryFile(this.props.imageUrl + ".labels", this.cloudData.map(x => x.classIndex));
+        return this.dataManager.saveBinaryFile(this.props.imageUrl + ".labels", this.cloudData.map(x => x.classIndex));
     }
 
     saveBinaryObjects() {
-        this.dataManager.saveBinaryFile(this.props.imageUrl + ".objects", Array.from(this.objects));
+        return this.dataManager.saveBinaryFile(this.props.imageUrl + ".objects", Array.from(this.objects));
     }
 
     saveAll() {
-        this.saveBinaryLabels();
-        this.saveBinaryObjects();
-        this.saveMeta();
+        const saveAttemptId = ++this.saveAttemptId;
+        this.updateSaveStatus("saving");
+
+        Promise.all([
+            this.saveBinaryLabels(),
+            this.saveBinaryObjects(),
+            this.saveMeta()
+        ]).then(() => {
+            if (saveAttemptId === this.saveAttemptId)
+                this.updateSaveStatus("saved");
+        }, () => {
+            if (saveAttemptId === this.saveAttemptId) {
+                const status = !this.ddpConnected || this.saveStatusState === "connectionLost" ? "connectionLost" : "unsaved";
+                if (status === "connectionLost")
+                    this.saveStateBeforeConnectionLoss = "unsaved";
+                this.updateSaveStatus(status);
+                this.notifySaveFailure();
+            }
+        });
     }
 
     saveMeta() {
-        Meteor.call("saveData", this.meta);
+        return new Promise((res, rej) => {
+            Meteor.call("saveData", this.meta, err => err ? rej(err) : res());
+        });
+    }
+
+    updateSaveStatus(state) {
+        this.saveStatusState = state;
+        if (!this.sendMsg)
+            return;
+        if (!state) {
+            this.sendMsg("save-status");
+            return;
+        }
+
+        this.sendMsg("save-status", Object.assign({state}, SAVE_STATUS[state]));
+    }
+
+    notifySaveFailure() {
+        if (!this.sendMsg)
+            return;
+        const now = Date.now();
+        if (now - this.lastSaveFailureAlertAt < SAVE_FAILURE_ALERT_THROTTLE_MS)
+            return;
+        this.lastSaveFailureAlertAt = now;
+        this.sendMsg("alert", {
+            message: "Could not save point cloud changes. Do not refresh until the status returns to Saved."
+        });
     }
 
     initDone(){
@@ -2069,7 +2161,7 @@ export default class SseEditor3d extends React.Component {
         this.meta = serverMeta ? Object.assign({}, serverMeta) : {url: this.props.imageUrl};
         this.meta.socName = this.activeSoc.name;
         // Persist the selected set immediately so page reload shows the correct set
-        this.saveMeta();
+        this.saveMeta().catch(() => (0/* saveAll will show user-facing save errors */));
 
         this.sendMsg("currentSample", {data: this.meta});
         const fileUrl = SseGlobals.getFileUrl(this.props.imageUrl);
@@ -2089,7 +2181,7 @@ export default class SseEditor3d extends React.Component {
                     }
                     this.sendMsg("maximum-classIndex", {value: this.maxClassIndex});
                 }, () => {
-                    this.saveBinaryLabels();
+                    this.saveBinaryLabels().catch(() => this.updateSaveStatus("unsaved"));
                 }).then(() => {
                 this.dataManager.loadBinaryFile(this.props.imageUrl + ".objects").then(result => {
                     if (!result.forEach)
