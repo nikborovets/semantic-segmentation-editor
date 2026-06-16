@@ -74,6 +74,8 @@ export default class SseClassChooser extends SseToolbar {
             this.setState({soc: arg.value});
             this.displayAll();
         });
+
+        this.onMsg("toggle-background-visibility", () => this.toggleBackgroundVisibility());
     }
 
     displayAll() {
@@ -95,9 +97,20 @@ export default class SseClassChooser extends SseToolbar {
 
     muteOrSolo(name, argument, idx) {
         if (this.state.counters[argument.classIndex] ||
-            (!this.state.counters[argument.classIndex] && this.state[name + idx])) {
+            (!this.state.counters[argument.classIndex] && this.state[name + idx]) ||
+            (name === "mute" && this.state["solo" + idx])) {
             this.toggleButton(name, idx);
             this.sendMsg(name, argument);
+        }
+    }
+
+    toggleBackgroundVisibility() {
+        if (!this.soc) {
+            return;
+        }
+        const backgroundIndex = this.soc.descriptors.findIndex(objDesc => objDesc.classIndex === 0);
+        if (backgroundIndex !== -1) {
+            this.muteOrSolo("mute", this.soc.descriptors[backgroundIndex], backgroundIndex);
         }
     }
 

@@ -193,7 +193,7 @@ export default class SseEditor3d extends React.Component {
 
         if (soloMode) {
             this.classesDescriptors.byIndex.forEach(classObj => {
-                classObj.visible = classObj.solo;
+                classObj.visible = classObj.solo && !classObj.mute;
             });
         } else {
             this.editingClassIndex = -1;
