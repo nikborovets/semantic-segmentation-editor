@@ -43,7 +43,7 @@ services:
       MONGO_URL: mongodb://mongo:27017/meteor
       PORT: 3000
       SETTINGS_FILE: ${SETTINGS_FILE:-settings.json}
-      METEOR_SETTINGS: ${METEOR_SETTINGS:-}
+      METEOR_SETTINGS: "${METEOR_SETTINGS:-}"
       # 0 = rebuild on container start/restart only (default). 1 = meteor run with hot reload.
       SSE_HOT_RELOAD: ${SSE_HOT_RELOAD:-0}
       SSE_FORCE_REBUILD: ${SSE_FORCE_REBUILD:-0}

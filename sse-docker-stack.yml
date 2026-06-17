@@ -18,7 +18,7 @@ services:
       ROOT_URL: ${APP_ROOT_URL:-http://localhost:8500}
       MONGO_URL: mongodb://mongo:27017/meteor
       PORT: 3000
-      METEOR_SETTINGS: ${METEOR_SETTINGS}
+      METEOR_SETTINGS: "${METEOR_SETTINGS:-}"
 
   mongo:
     image: mongo:7.0

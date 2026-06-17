@@ -81,10 +81,6 @@ When a user opens a PCD cloud for the first time (no MongoDB record), a modal di
 
 - `obj.label = soc && soc.objects[obj.classIndex] ? ... : String(obj.classIndex)` — null-safe label resolution
 
-### `settings.json`
-
-- Added `{"label": "background", "color": "#000000"}` and `{"label": "orphan", "color": "#FF00FF"}` to all three sets (Cityscapes, AD20, 33 Classes)
-
 ### `room_labels_new.json`
 
 - Added `{"label": "orphan", "color": "#FF00FF"}` to RoomLabels set

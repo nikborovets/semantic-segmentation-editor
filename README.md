@@ -76,7 +76,7 @@ See [docs/DOCKER_DEV.md](docs/DOCKER_DEV.md) for the full workflow.
 
 1. Download the docker compose stack file (`sse-docker-stack.yml`)
 2. Set the folder that contains bitmap and point cloud files (`YOUR_IMAGES_PATH`) and run the tool using Docker Compose
-3. The tool runs by default on port 80, you can change the mapping in `sse-docker-stack.yml`
+3. The tool runs by default on `http://localhost:8500`; you can change the mapping in `sse-docker-stack.yml`
 ```
 wget https://raw.githubusercontent.com/nikborovets/semantic-segmentation-editor/master/sse-docker-stack.yml
 wget https://raw.githubusercontent.com/nikborovets/semantic-segmentation-editor/master/settings.json

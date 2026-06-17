@@ -8,7 +8,7 @@
     {
       "name": "RoomLabels",
       "objects": [
-        {"label": "background", "color": "#000000"},
+        {"label": "background", "color": "#FFFFFF"},
         {"label": "bag_big_black_leica", "color": "#A6F430"},
         {"label": "bag_rag_dark", "color": "#DDFF33"},
         {"label": "baseboard", "color": "#1781B7"},

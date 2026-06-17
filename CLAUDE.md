@@ -42,7 +42,7 @@ docker compose -f sse-docker-stack.dev.yml down
 docker compose -f sse-docker-stack.dev.yml down -v
 ```
 
-Build logs inside the container: `/tmp/borovets-sse-meteor-build.log`
+Build logs inside the container: `/var/cache/borovets-sse-meteor-build/meteor-build.log`
 
 ## Configuration
 

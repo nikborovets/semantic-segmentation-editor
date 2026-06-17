@@ -95,8 +95,8 @@ That means **`SSE_HOT_RELOAD=1`** (classic `meteor run`), not restart-only mode.
 
 3. On startup you must see:
    ```text
-   [dev] entrypoint v4 | SSE_HOT_RELOAD=0
-   [dev] Mode: RESTART-ONLY (meteor build + node)
+   [dev] entrypoint v7 | SSE_HOT_RELOAD=0 | cache=/var/cache/borovets-sse-meteor-build
+   [dev] Mode: RESTART-ONLY (cached build + stashed server deps) — fast when deps are unchanged.
    ```
    If you see `HOT RELOAD` or `Started proxy.` — wrong mode.
 
@@ -110,7 +110,7 @@ After `Started proxy.`, Meteor can sit **15–45 minutes** with almost no new li
 
 ### Restart-only build seems stuck
 
-First `meteor build` is slow and quiet. Watch app logs for `meteor build started` / `meteor build finished`. Full log inside the container: `/tmp/borovets-sse-meteor-build.log`.
+First `meteor build` is slow and quiet. Watch app logs for `meteor build started` / `meteor build finished`. Full log inside the container: `/var/cache/borovets-sse-meteor-build/meteor-build.log`.
 
 Ensure the server has enough RAM for Meteor (8 GB+ recommended).
 

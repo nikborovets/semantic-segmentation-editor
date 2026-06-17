@@ -125,9 +125,12 @@ export default class SseClassChooser extends SseToolbar {
             newSoc = this.classesSets[0];
         }
         const t = this.state.counters;
-        let maxClassIndex = Math.max(...Object.keys(t).filter(k => t[k] > 0));
+        const usedClassIndices = Object.keys(t)
+            .filter(k => t[k] > 0)
+            .map(k => parseInt(k));
+        let maxClassIndex = usedClassIndices.length ? Math.max(...usedClassIndices) : 0;
 
-        if (newSoc.descriptors.length >= maxClassIndex) {
+        if (newSoc.descriptors.length > maxClassIndex) {
             this.setState({
                 soc: newSoc,
                 classes: newSoc.descriptors,

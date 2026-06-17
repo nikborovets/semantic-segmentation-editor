@@ -900,10 +900,10 @@ export default class SseEditor3d extends React.Component {
             const data = this.cloudData[this.highlightedIndex];
             const pj = this.getPixel(data);
             if (pj) {
-                const message_label = (this.activeSoc && data.classIndex < this.activeSoc.classesCount)
+                const messageLabel = (this.activeSoc && data.classIndex < this.activeSoc.classesCount)
                     ? this.activeSoc.labelForIndex(data.classIndex)
                     : String(data.classIndex);
-                let message = message_label;
+                let message = messageLabel;
                 const oc = this.originalCoordinates(this.highlightedIndex);
                 message += " (x: " + round2(oc.x)
                     + "m, y: " + round2(oc.y)

@@ -4,6 +4,7 @@ import {basename} from "path";
 import {readFile} from "fs";
 import * as THREE from 'three';
 import SsePCDLoader from "../imports/editor/3d/SsePCDLoader";
+import {resolveInside} from "./pathUtils";
 
 WebApp.connectHandlers.use("/api/json", generateJson);
 WebApp.connectHandlers.use("/api/pcdtext", generatePCDOutput.bind({fileMode: false}));
@@ -58,11 +59,21 @@ function generateJson(req, res, next) {
 }
 
 function generatePCDOutput(req, res, next) {
-    const decodedUrl = decodeURIComponent(req.url);
-    const pcdFile = imagesFolder + decodedUrl;
+    let decodedUrl;
+    let pcdFile;
+    let labelFile;
+    let objectFile;
+    try {
+        const requestPath = (req.url || "").split(/[?#]/)[0];
+        decodedUrl = decodeURIComponent(requestPath);
+        pcdFile = resolveInside(imagesFolder, requestPath);
+        labelFile = resolveInside(pointcloudsFolder, requestPath, ".labels");
+        objectFile = resolveInside(pointcloudsFolder, requestPath, ".objects");
+    } catch (err) {
+        finishPCDExportError(res, 400, "Invalid PCD export path.");
+        return;
+    }
     const fileName = basename(pcdFile);
-    const labelFile = pointcloudsFolder + decodedUrl + ".labels";
-    const objectFile = pointcloudsFolder + decodedUrl + ".objects";
     const exportContext = {
         url: req.url,
         decodedUrl,

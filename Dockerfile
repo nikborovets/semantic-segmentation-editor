@@ -22,6 +22,7 @@ ENV SCRIPTS_FOLDER /docker
 RUN apk --no-cache add \
                 bash \
                 ca-certificates \
+    && apk --no-cache add --virtual .build-deps \
                 python3 \
                 make \
                 g++ \
@@ -34,7 +35,8 @@ COPY --from=0 $SCRIPTS_FOLDER $SCRIPTS_FOLDER/
 COPY --from=0 $APP_BUNDLE_FOLDER/bundle $APP_BUNDLE_FOLDER/bundle/
 
 RUN bash $SCRIPTS_FOLDER/build-meteor-npm-dependencies.sh \
-    && apk del python3 make g++
+    && rm -f /usr/bin/python \
+    && apk del .build-deps
 
 # Start app
 ENTRYPOINT ["/docker/entrypoint.sh"]
