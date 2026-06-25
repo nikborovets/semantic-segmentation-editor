@@ -28,6 +28,7 @@ const modulo = (x) => (x % DOUBLEPI + DOUBLEPI) % DOUBLEPI;
 const moduloHalfPI = (x) => modulo(x + PI) - PI;
 const round2 = (x) => Math.round(x * 100) / 100;
 const SAVE_FAILURE_ALERT_THROTTLE_MS = 30000;
+const SPA_LEAVE_GUARD_MESSAGE = "Changes you made may not be saved.";
 const SAVE_STATUS = {
     saved: {message: "Saved"},
     saving: {message: "Saving..."},
@@ -63,8 +64,10 @@ export default class SseEditor3d extends React.Component {
         this.saveAttemptId = 0;
         this.saveStatusState = undefined;
         this.saveStateBeforeConnectionLoss = undefined;
+        this.dirtySinceLastSave = false;
         this.lastSaveFailureAlertAt = 0;
         this.ddpConnected = true;
+        this.spaGuardEntry = {sseLeaveGuard: true};
         
         this.tweenDuration = 500;
 
@@ -446,7 +449,7 @@ export default class SseEditor3d extends React.Component {
 
                     this.invalidateColor();
                     this.displayAll();
-                    this.saveMeta().catch(() => this.updateSaveStatus("unsaved"));
+                    this.persistMeta();
                 }
                 this.generateColorCache();
             }
@@ -524,9 +527,41 @@ export default class SseEditor3d extends React.Component {
         }));
 
         this.onMsg("rgb-toggle", () => this.toggleRgbDisplay());
+
+        window.addEventListener("beforeunload", this.onBeforeUnload);
+        this.installSpaLeaveGuard();
     }
 
+    installSpaLeaveGuard() {
+        window.history.pushState(this.spaGuardEntry, "", window.location.href);
+        window.addEventListener("popstate", this.onPopState);
+    }
+
+    onPopState = () => {
+        if (!this.shouldBlockPageLeave()) {
+            window.history.back();
+            return;
+        }
+        if (!window.confirm(SPA_LEAVE_GUARD_MESSAGE)) {
+            window.history.pushState(this.spaGuardEntry, "", window.location.href);
+            return;
+        }
+        window.removeEventListener("popstate", this.onPopState);
+        window.history.back();
+    };
+
+    onBeforeUnload = (event) => {
+        if (!this.shouldBlockPageLeave())
+            return;
+        event.preventDefault();
+        event.returnValue = "";
+    };
+
     componentWillUnmount(){
+        window.removeEventListener("beforeunload", this.onBeforeUnload);
+        window.removeEventListener("popstate", this.onPopState);
+        if (window.history.state && window.history.state.sseLeaveGuard)
+            window.history.back();
         if (this.connectionTracker)
             this.connectionTracker.stop();
         SseMsg.unregister(this);
@@ -1313,13 +1348,16 @@ export default class SseEditor3d extends React.Component {
         }
     }
 
-    rotateGeometry(rx, ry, rz) {
+    rotateGeometry(rx, ry, rz, persistChanges = false) {
         this.meta.rotationX = rx || 0;
         this.meta.rotationY = ry || 0;
         this.meta.rotationZ = rz || 0;
         this.cloudGeometry.rotateX(this.meta.rotationX).rotateY(this.meta.rotationY).rotateZ(this.meta.rotationZ);
         this.display(this.objects, this.positionArray, this.currentLabelArray(), this.rgbArray);
-        this.saveMeta().catch(() => this.updateSaveStatus("unsaved"));
+        if (persistChanges)
+            this.persistMeta();
+        else
+            this.saveMeta().catch(() => (0));
     }
 
     resetRotation() {
@@ -1444,7 +1482,7 @@ export default class SseEditor3d extends React.Component {
         this.meta.rotationY = ry;
         this.meta.rotationZ = rz;
 
-        this.rotateGeometry(rx, ry, rz);
+        this.rotateGeometry(rx, ry, rz, true);
 
         let obj, idx = 0;
         this.positionArray.forEach((v, i) => {
@@ -2077,6 +2115,7 @@ export default class SseEditor3d extends React.Component {
 
     saveAll() {
         const saveAttemptId = ++this.saveAttemptId;
+        this.markDirty();
         this.updateSaveStatus("saving");
 
         Promise.all([
@@ -2084,8 +2123,10 @@ export default class SseEditor3d extends React.Component {
             this.saveBinaryObjects(),
             this.saveMeta()
         ]).then(() => {
-            if (saveAttemptId === this.saveAttemptId)
+            if (saveAttemptId === this.saveAttemptId) {
+                this.clearDirty();
                 this.updateSaveStatus("saved");
+            }
         }, () => {
             if (saveAttemptId === this.saveAttemptId) {
                 const status = !this.ddpConnected || this.saveStatusState === "connectionLost" ? "connectionLost" : "unsaved";
@@ -2101,6 +2142,33 @@ export default class SseEditor3d extends React.Component {
         return new Promise((res, rej) => {
             Meteor.call("saveData", this.meta, err => err ? rej(err) : res());
         });
+    }
+
+    persistMeta() {
+        this.markDirty();
+        return this.saveMeta()
+            .then(() => {
+                this.clearDirty();
+                if (this.saveStatusState !== "connectionLost")
+                    this.updateSaveStatus("saved");
+            })
+            .catch(() => this.updateSaveStatus("unsaved"));
+    }
+
+    markDirty() {
+        this.dirtySinceLastSave = true;
+    }
+
+    clearDirty() {
+        this.dirtySinceLastSave = false;
+    }
+
+    shouldBlockPageLeave() {
+        if (this.saveStatusState === "saving" || this.saveStatusState === "unsaved")
+            return true;
+        if (this.saveStatusState === "connectionLost" && this.dirtySinceLastSave)
+            return true;
+        return false;
     }
 
     updateSaveStatus(state) {
