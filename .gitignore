@@ -8,3 +8,4 @@ pcd_samples/*
 sse-internal-local/*
 *.log
 docs/UNDO_REDO_3D_NOTES.md
+backups/

@@ -25,7 +25,7 @@ HOT_RELOAD="${SSE_HOT_RELOAD:-0}"
 FORCE_REBUILD="${SSE_FORCE_REBUILD:-0}"
 
 echo "================================================================"
-echo "[dev] entrypoint v7 | SSE_HOT_RELOAD=${HOT_RELOAD} | cache=${BUILD_ROOT}"
+echo "[dev] entrypoint v8 | SSE_HOT_RELOAD=${HOT_RELOAD} | cache=${BUILD_ROOT}"
 if [[ "$HOT_RELOAD" == "1" ]]; then
   echo "[dev] Mode: HOT RELOAD (meteor run) — you will see 'Started proxy.' then a LONG quiet compile."
 else
@@ -47,13 +47,12 @@ if [[ ! -f "$SETTINGS_FILE" ]]; then
   exit 1
 fi
 
-export_meteor_settings() {
-  if [[ -z "${METEOR_SETTINGS:-}" ]]; then
-    export METEOR_SETTINGS
-    METEOR_SETTINGS="$(cat "$SETTINGS_FILE")"
-    export METEOR_SETTINGS
-  fi
-}
+# Node preload mounted/COPY'd outside /opt/src (see compose + Dockerfile.dev).
+SETTINGS_LOADER="/usr/local/lib/sse/load-meteor-settings.js"
+if [[ ! -f "$SETTINGS_LOADER" ]]; then
+  echo "[dev] Settings loader not found: $SETTINGS_LOADER" >&2
+  exit 1
+fi
 
 compute_source_fingerprint() {
   # ROOT_URL is baked into the server bundle via meteor build --server.
@@ -128,8 +127,6 @@ run_meteor_dev_server() {
 }
 
 run_build_and_node() {
-  export_meteor_settings
-
   mkdir -p "$BUILD_ROOT"
   local source_fp
   source_fp="$(compute_source_fingerprint)"
@@ -150,7 +147,7 @@ run_build_and_node() {
   if [[ "$need_build" -eq 1 ]]; then
     echo "[dev] $(date -Iseconds) meteor build started (log: $BUILD_LOG)"
     echo "[dev] First build on a server often takes 15-45 minutes with sparse output — this is normal."
-    echo "[dev] Settings from $SETTINGS_FILE are applied at runtime via METEOR_SETTINGS (meteor build has no --settings flag)."
+    echo "[dev] Settings from $SETTINGS_FILE are loaded at runtime via $SETTINGS_LOADER (meteor build has no --settings flag)."
     rm -rf "$BUILD_DIR"
     : >"$BUILD_LOG"
 
@@ -187,7 +184,11 @@ run_build_and_node() {
   echo "[dev] After code changes: docker compose -f sse-docker-stack.dev.yml restart app"
   echo "[dev] Full rebuild: SSE_FORCE_REBUILD=1 docker compose -f sse-docker-stack.dev.yml restart app"
   cd "$BUNDLE_DIR"
-  exec node main.js
+  local settings_abs="$SETTINGS_FILE"
+  [[ "$settings_abs" != /* ]] && settings_abs="$APP_DIR/$settings_abs"
+  export SETTINGS_FILE="$settings_abs"
+  # SETTINGS_FILE is a short path in env; JSON is read inside Node (no 128 KiB exec limit).
+  exec node -r "$SETTINGS_LOADER" main.js
 }
 
 if [[ "$HOT_RELOAD" == "1" ]]; then
