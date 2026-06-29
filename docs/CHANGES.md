@@ -4,6 +4,12 @@ Base commit: `ead980c` — everything before this was untouched.
 
 ## Recent commits
 
+### `a1e119e` — Large settings file fix and dev data backups
+
+- **Large `METEOR_SETTINGS` / `Argument list too long`:** exporting a big settings JSON (e.g. `sse_labels_roomlabels-*.json` with Cyrillic labels, ~138 KB UTF-8) into `METEOR_SETTINGS` before `mkdir`/`node` hit Linux `MAX_ARG_STRLEN` (128 KiB per env value). Symptom: entrypoint failed on an unrelated command such as `mkdir`, exit 126. Fix: pass only `SETTINGS_FILE` (short path) in env; load JSON inside Node via `node -r /usr/local/lib/sse/load-meteor-settings.js main.js` after `meteor build`.
+- **Browser `Cannot find module 'fs'`:** placing `load-meteor-settings.js` under `/opt/src/scripts/` caused Meteor to bundle it for `web.browser`. Fix: mount/COPY the loader outside `/opt/src` (`/usr/local/lib/sse/`) and add `.meteorignore` for `scripts/` and `backups/`.
+- **Dev backups:** added `scripts/backup-dev-data.sh` — read-only backup of MongoDB (`mongodump` from `borovets-sse-mongo-dev`) and `/root/sse-internal` (tar from `borovets-sse-app-dev`) into timestamped `backups/` folders; `backups/` added to `.gitignore`.
+
 ### `fdd0ecb` — Background visibility shortcut and solo/mute behavior
 
 - Added a 3D shortcut `E` to toggle background (`classIndex === 0`) visibility.
@@ -42,6 +48,8 @@ When a user opens a PCD cloud for the first time (no MongoDB record), a modal di
 
 ### Bug fixes
 
+- **Docker dev: `Argument list too long` on startup** (`scripts/docker-dev-entrypoint.sh`): removed `export METEOR_SETTINGS="$(cat "$SETTINGS_FILE")"`. Large settings files (especially UTF-8 Cyrillic labels) exceed the 128 KiB per-env limit on `execve`, so any subprocess (`mkdir`, `node`, …) failed after export. Settings are now loaded from `SETTINGS_FILE` by a Node preload script instead.
+- **Docker dev: `Cannot find module 'fs'` in browser** (`scripts/load-meteor-settings.js`): Meteor bundled the Node-only preload script into the client bundle when it lived under `/opt/src`. Fixed by mounting the loader at `/usr/local/lib/sse/load-meteor-settings.js` and ignoring `scripts/` in `.meteorignore`.
 - **Server crash on EPERM** (`server/files.js`): writing `.labels`/`.objects` files via `createWriteStream` had no error handler — an unhandled error event crashed the Node process. Fixed with `wstream.on('error', ...)`. Also fixed a double-slash in the file path (`string +` replaced with `path.join()`).
 - **`updateClassFilter` crash** (`SseEditor3d`): when `displayRgb = true`, `display()` built RGB color buffer but skipped assigning `classIndex` on `cloudData` points. Then `updateClassFilter` did `classesData[pt.classIndex].visible` where `classIndex` was `undefined` → TypeError. Fixed by always assigning `classIndex` from `labelArray` first, separately from color building.
 - **`labelForIndex` crash on hover** (`SseEditor3d`): `setHighlightFeedback` called `activeSoc.labelForIndex(classIndex)` without checking bounds — crashed if `classIndex` was outside the set's range. Fixed with `classIndex < activeSoc.classesCount` guard.
@@ -91,6 +99,28 @@ When a user opens a PCD cloud for the first time (no MongoDB record), a modal di
 - Added comments explaining restart workflow
 - Added `SSE_FORCE_REBUILD` and `SSE_HOT_RELOAD` env vars with defaults
 - Switched default `SSE_IMAGES` path to `./pcd_samples` for local dev
+- Bind-mount `./scripts/load-meteor-settings.js` to `/usr/local/lib/sse/load-meteor-settings.js` (outside `/opt/src`, not scanned by Meteor build)
+
+### `scripts/docker-dev-entrypoint.sh`
+
+- Removed `export_meteor_settings()` (large JSON in env broke `execve`)
+- Start production bundle with `node -r /usr/local/lib/sse/load-meteor-settings.js main.js`; export absolute `SETTINGS_FILE` path only
+
+### `scripts/backup-dev-data.sh`
+
+- New script: `./scripts/backup-dev-data.sh` backs up dev MongoDB and `sse-internal` from running containers into `backups/<timestamp>/`
+- Uses `mongodump --gzip` inside `borovets-sse-mongo-dev` and `tar` of `/root/sse-internal` inside `borovets-sse-app-dev` (read-only; safe while stack is up)
+- Writes `README.txt` with restore commands in each backup folder
+
+### `scripts/load-meteor-settings.js`
+
+- Node preload (`-r`): reads `SETTINGS_FILE` into `process.env.METEOR_SETTINGS` inside the Node process
+- Avoids passing large JSON through `execve` env (Linux 128 KiB limit per variable)
+- Installed in the image via `Dockerfile.dev`; overridden at runtime by compose bind-mount
+
+### `.meteorignore`
+
+- Ignores `scripts/` and `backups/` so dev tooling is not bundled into the Meteor app
 
 ### `CLAUDE.md`
 
